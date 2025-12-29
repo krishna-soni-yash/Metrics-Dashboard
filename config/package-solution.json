@@ -1,0 +1,40 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/spfx-build/package-solution.schema.json",
+  "solution": {
+    "name": "metrics-dashboard-client-side-solution",
+    "id": "fdecc84a-e385-45d8-b19d-a9be8fae0c92",
+    "version": "1.0.0.0",
+    "includeClientSideAssets": true,
+    "skipFeatureDeployment": true,
+    "isDomainIsolated": false,
+    "developer": {
+      "name": "",
+      "websiteUrl": "",
+      "privacyUrl": "",
+      "termsOfUseUrl": "",
+      "mpnId": "Undefined-1.21.1"
+    },
+    "metadata": {
+      "shortDescription": {
+        "default": "metrics-dashboard description"
+      },
+      "longDescription": {
+        "default": "metrics-dashboard description"
+      },
+      "screenshotPaths": [],
+      "videoUrl": "",
+      "categories": []
+    },
+    "features": [
+      {
+        "title": "metrics-dashboard Feature",
+        "description": "The feature that activates elements of the metrics-dashboard solution.",
+        "id": "492bc65b-1b01-4932-87f5-44e9a1b23a8b",
+        "version": "1.0.0.0"
+      }
+    ]
+  },
+  "paths": {
+    "zippedPackage": "solution/metrics-dashboard.sppkg"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "@microsoft/generator-sharepoint": {
+    "plusBeta": false,
+    "isCreatingSolution": true,
+    "nodeVersion": "22.19.0",
+    "sdksVersions": {},
+    "version": "1.21.1",
+    "libraryName": "metrics-dashboard",
+    "libraryId": "fdecc84a-e385-45d8-b19d-a9be8fae0c92",
+    "environment": "spo",
+    "packageManager": "npm",
+    "solutionName": "metrics-dashboard",
+    "solutionShortDescription": "metrics-dashboard description",
+    "skipFeatureDeployment": true,
+    "isDomainIsolated": false,
+    "componentType": "webpart"
+  }
+}
