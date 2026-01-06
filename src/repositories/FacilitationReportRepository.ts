@@ -3,8 +3,8 @@ import IGenericService from '../services/IGenericServices';
 import { WebPartContext } from '@microsoft/sp-webpart-base';
 import ErrorMessages from '../common/ErrorMessages';
 import { SubSiteListNames } from '../common/Constants';
-import { ICSIRepository } from './repositoryInterface/ICSIRespository';
-import { ICSI } from '../Models/ICSI';
+import { IFacilitationReportRepository } from './repositoryInterface/IFacilitationReportInterface';
+import { IFacilitationReport } from '../Models/IFacilationReport';
 //import { getListConfigurationBasedOnMetricLogs } from '../repositories/ObjectivesMasterRepository';
 //import IObjectivesMasterRepository from './repositoriesInterface/IObjectivesMasterRepository';
 
@@ -12,9 +12,9 @@ import { ICSI } from '../Models/ICSI';
  * Repository for ProjectTypes list
  * Implements a simple cached fetch of Id/LinkTitle values
  */
-export class CSIRepository implements ICSIRepository {
+export class FacilitationReportRepository implements IFacilitationReportRepository {
     private service: IGenericService;
-    private cache: ICSI[] | null = null;
+    private cache: IFacilitationReport[] | null = null;
     private cacheTimestamp = 0;
     private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
@@ -36,7 +36,7 @@ export class CSIRepository implements ICSIRepository {
 
 
 
-    public async getCSIValues(useCache: boolean = true, context?: WebPartContext, selectedStartDate?: string, selectedEndDate?: string): Promise<ICSI[]> {
+    public async getFacilitationValues(useCache: boolean = true, context?: WebPartContext, selectedStartDate?: string, selectedEndDate?: string): Promise<IFacilitationReport[]> {
         const now = Date.now();
 
         if (useCache && this.cache && (now - this.cacheTimestamp) < this.CACHE_DURATION) {
@@ -59,10 +59,11 @@ export class CSIRepository implements ICSIRepository {
             // }
             const items = await this.service.fetchAllItems<any>({
                 context,
-                listTitle: SubSiteListNames.CSI,
+                listTitle: SubSiteListNames.FacilitationReport,
                 //select: selectFields,
                 pageSize: 5000,
-                orderBy: 'Created',
+                filter:"Status eq 'open'",
+               // orderBy: 'Created',
                 //   $select=Id,Title,Created,Author/Title
                 //   &$expand=Author
                 //   &$orderby=Created desc
@@ -73,17 +74,21 @@ export class CSIRepository implements ICSIRepository {
             });
 
             const normalized = (items || []).map((it: any) => ({
-                Title: it?.Title ?? '',
-                CSATAquiredDate: it?.Created ?? '',
+                ID: it?.ID,
+                Category: it?.Category,
+                Finding: it?.Finding,
+                FindingDate: it?.FindingDate,
+                ClosureDate: it?.ClosureDate,
+                Status: it?.Status
 
-            })) as unknown as ICSI[];
+            })) as unknown as IFacilitationReport[];
 
             this.cache = normalized;
             this.cacheTimestamp = now;
 
             return this.cache;
         } catch (error: any) {
-            throw new Error('Failed to fetch ProjectType: ' + (error?.message || error));
+            throw new Error('Failed to fetch FacilitationReport: ' + (error?.message || error));
         }
     }
 
@@ -104,10 +109,10 @@ export class CSIRepository implements ICSIRepository {
     }
 }
 
-const defaultInstance = new CSIRepository();
+const defaultInstance = new FacilitationReportRepository();
 
 export default defaultInstance;
 export const MetricsRepo = defaultInstance;
-export const getCSIValues = async (useCache: boolean = false, context?: WebPartContext, selectedStartDate?: string, selectedEndDate?: string): Promise<ICSI[]> => defaultInstance.getCSIValues(useCache, context, selectedStartDate, selectedEndDate);
+export const getFacilitationValues = async (useCache: boolean = false, context?: WebPartContext, selectedStartDate?: string, selectedEndDate?: string): Promise<IFacilitationReport[]> => defaultInstance.getFacilitationValues(useCache, context, selectedStartDate, selectedEndDate);
 export const refresh = (): void => defaultInstance.refresh();
 export const getCacheStatus = (): { cached: boolean; itemCount: number; age: number } => defaultInstance.getCacheStatus();

@@ -16,6 +16,8 @@ import {
     Pivot,
     PivotItem,
     DetailsList,
+    SelectionMode,
+    CheckboxVisibility,
     IColumn
 } from '@fluentui/react';
 import IGenericService from '../../../../services/IGenericServices';
@@ -49,6 +51,8 @@ import { getIAMSEffortLogValues } from '../../../../repositories/AMSRepository';
 import IAMSEffortLogRepository from '../../../../repositories/repositoryInterface/IAMSEffortLogRespository';
 import { AMSEffortLogRepository } from '../../../../repositories/AMSRepository';
 import { set } from '@microsoft/sp-lodash-subset/lib/index';
+import IFacilitationReportRepository from '../../../../repositories/repositoryInterface/IFacilitationReportInterface';
+import { FacilitationReportRepository, getFacilitationValues } from '../../../../repositories/FacilitationReportRepository';
 //import { IMetrics } from '../../../../Models/IMetrics';
 
 interface DashboardProps {
@@ -115,7 +119,31 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
     const [costOfQualityTotal, setcostOfQualityTotal] = React.useState<number>(0);
     const [defectsDetailsListItems, setDefectsDetailsListItems] = React.useState<any[]>([]);
     const [defectsDetailsListColumns, setDefectsDetailsListColumns] = React.useState<IColumn[]>([]);
+    const [facilitationReportData, setFacilitationReportData] = React.useState<any[]>([]);
+    const [facilitationReportDataForChart, setFacilitationReportDataForChart] = React.useState<any[]>([]);
+    const [agingFindingsData,setagingFindingsData]= React.useState<any[]>([]);
 
+    // new KPI counts
+    // const [openRootCauseCount, setOpenRootCauseCount] = React.useState<number>(0);
+    // const [openIssuesCount, setOpenIssuesCount] = React.useState<number>(0);
+    // const [openActionItemsCount, setOpenActionItemsCount] = React.useState<number>(0);
+
+    // React.useEffect(() => {
+    //     if (!Array.isArray(facilitationReportData)) {
+    //         setOpenRootCauseCount(0);
+    //         setOpenIssuesCount(0);
+    //         setOpenActionItemsCount(0);
+    //         return;
+    //     }
+    //     const norm = (s: any) => String(s ?? '').trim().toLowerCase();
+    //     const isOpen = (it: any) => {
+    //         const s = norm(it?.Status);
+    //         return s !== 'closed' && s !== 'resolved' && s !== 'done';
+    //     };
+    //     setOpenRootCauseCount(facilitationReportData.filter(f => norm(f?.Category) === 'root cause' && isOpen(f)).length);
+    //     setOpenIssuesCount(facilitationReportData.filter(f => norm(f?.Category) === 'issue' && isOpen(f)).length);
+    //     setOpenActionItemsCount(facilitationReportData.filter(f => ['action item','action','actionitem'].indexOf(norm(f?.Category)) && isOpen(f)).length);
+    // }, [facilitationReportData]);
 
     // compute latest CSI value (from csiData) — pick common field names and latest by CSATAquiredDate (fallbacks)
     const latestCsiValue: { value: string; valueRaw: any }[] = (() => {
@@ -165,13 +193,27 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
     //     ['Sep', 4.9, 4.0, 5.0],
     // ];
     // build KPIs from MetricsData; override CSI value with latestCsiValue when available
-    const rawKpis = (MetricsData || []).map(m => {
+ const desiredOrder = [
+        'Customer Satisfaction Index',
+        'Schedule Variation',
+        'Effort Variation',
+        'Post Delivery Defects',
+        'Overall Productivity',
+        'Internal Defects',
+        'Cost of Quality',
+        'Resource Utilization'
+    ];
+
+    let rawKpis:any[] = []
+    if(MetricsData.length>0){
+     rawKpis = (MetricsData || []).map(m => {
+        
         try {
             const safe = (v: any) => (v === undefined || v === null) ? null : v;
-            let goalLabel = '';
-            if (safe(m?.LSL) != null && safe(m?.USL) != null) goalLabel = `${m.LSL} - ${m.USL}`;
-            else if (safe(m?.LSL) != null) goalLabel = `>= ${m.LSL}`;
-            else if (safe(m?.USL) != null) goalLabel = `<= ${m.USL}`;
+            let goalLabel = m.goal;
+            // if (safe(m?.LSL) != null && safe(m?.USL) != null) goalLabel = `${m.LSL} - ${m.USL}`;
+            // else if (safe(m?.LSL) != null) goalLabel = `>= ${m.LSL}`;
+            // else if (safe(m?.USL) != null) goalLabel = `<= ${m.USL}`;
 
             let value = String(m?.value ?? '');
             let status = 'red';
@@ -225,13 +267,13 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
 
             if (titleNormalized === 'resource utilization' || titleNormalized === 'resource_utilization') {
 
-                value = `${resourceUtilization.toFixed(4)}%`;
+                value = `${resourceUtilization.toFixed(2)}%`;
                 status = (resourceUtilization >= (m?.LSL ?? -Infinity) && resourceUtilization <= (m?.USL ?? Infinity)) ? 'green' : 'red';
                 return { id: m?.id, title: m?.title, value, goal: goalLabel, status, pivotKey: m?.pivotKey };
             }
             if (titleNormalized === 'cost of quality' || titleNormalized === 'cost_of_quality') {
 
-                value = `${costOfQualityTotal.toFixed(4)}%`;
+                value = `${costOfQualityTotal.toFixed(2)}%`;
                 status = (costOfQualityTotal >= (m?.LSL ?? -Infinity) && costOfQualityTotal <= (m?.USL ?? Infinity)) ? 'green' : 'red';
                 return { id: m?.id, title: m?.title, value, goal: goalLabel, status, pivotKey: m?.pivotKey };
             }
@@ -251,20 +293,14 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
             return { id: m?.id ?? Math.random(), title: String(m?.title ?? m?.Metrics ?? 'Metric'), value: String(m?.value ?? ''), goal: '', status: 'red', pivotKey: m?.pivotKey ?? '' };
         }
     });
+}else{
+    rawKpis=desiredOrder
+}
 
     // Reorder KPIs to the requested display priority (case-insensitive).
     // Desired order: Customer Satisfaction Index, Schedule Variation, Effort Variation,
     // Post Delivery Defects, Overall Productivity, Internal Defects, Cost of Quality, Resource Utilization
-    const desiredOrder = [
-        'Customer Satisfaction Index',
-        'Schedule Variation',
-        'Effort Variation',
-        'Post Delivery Defects',
-        'Overall Productivity',
-        'Internal Defects',
-        'Cost of Quality',
-        'Resource Utilization'
-    ];
+   
 
     const remaining = [...rawKpis];
     const orderedKpis: any[] = [];
@@ -336,12 +372,12 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
     // ];
 
     // NEW: findings summary data provided by user
-    const findingsTypeData = [
-        ['Type', 'Count'],
-        ['NCs', 101],
-        ['Observations', 356],
-        ['Facilitation', 279],
-    ];
+    // const findingsTypeData = [
+    //     ['Type', 'Count'],
+    //     ['NCs', 101],
+    //     ['Observations', 356],
+    //     ['Facilitation', 279],
+    // ];
 
     // const contributorsData = [
     //     ['Entity', 'Count'],
@@ -369,13 +405,41 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
     //     ['Low', 8],
     // ];
     // NEW: Aging findings data (example buckets summing to total 736)
-    const agingFindingsData = [
-        ['Aging', 'Findings'],
-        ['0-30 days', 320],
-        ['31-60 days', 180],
-        ['61-90 days', 120],
-        ['>90 days', 116],
+    // const agingFindingsData = [
+    //     ['Aging', 'Findings'],
+    //     ['>=7 days', 10],
+    //     ['<=30 days', 2],
+    //     ['>30 days', 5],
+    // ];
+
+    // NEW: sample PCI (Process Compliance Index) time series similar to provided image
+    const pciChartData = [
+        ['Date', 'PCI', { role: 'annotation', type: 'string' }],
+        ['19-Sep-24', -50, '-50'],
+        ['26-Sep-24', -60, '-60'],
+        ['03-Oct-24', -60, '-60'],
+        ['10-Oct-24', -60, '-60'],
+        ['17-Oct-24', -40, '-40'],
+        ['24-Oct-24', -20, '-20'],
+        ['31-Oct-24', -20, '-20']
     ];
+
+    const pciOptions = {
+        title: 'Process Compliance Index (PCI)',
+        legend: { position: 'none' },
+        seriesType: 'line',
+        series: { 0: { color: '#1e88e5', lineWidth: 2, pointSize: 6 } },
+        colors: ['#1e88e5'],
+        annotations: {
+            alwaysOutside: true,
+            textStyle: { fontSize: 10, color: '#222', bold: false },
+            stem: { color: 'transparent', length: 0 }
+        },
+        hAxis: { textStyle: { color: '#555' } },
+        vAxis: { viewWindow: { min: -160, max: 40 }, gridlines: { color: '#eee' } },
+        chartArea: { left: 60, top: 40, right: 20, bottom: 40 },
+        dataOpacity: 0.95
+    };
 
     // Simple CSV export (example for visible KPI + selected metric)
     const exportToCsv = () => {
@@ -628,9 +692,18 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
     };
 
     const handleChartSelect = (chartKey: string, data: any[][], title: string) => {
-        const { columns, items } = convertDataToDetails(data);
-        setVisibleCharts(prev => ({ ...prev, [chartKey]: false }));
-        setActiveDetails({ key: chartKey, title, columns, items });
+        if (chartKey === 'Risk Summary') {
+            window.open('https://ytpl.sharepoint.com/sites/qualityuat/SMARTIQPlus/SitePages/RCA-And-Raid-Logs.aspx', 'self');
+        }
+        if (chartKey === 'findings') {
+            window.open('https://ytpl.sharepoint.com/sites/qualityuat/SMARTIQPlus/SitePages/Audit-Test.aspx', 'self');
+        }
+        else {
+            const { columns, items } = convertDataToDetails(data);
+            setVisibleCharts(prev => ({ ...prev, [chartKey]: false }));
+            setActiveDetails({ key: chartKey, title, columns, items });
+        }
+
     };
 
     const handleBackToChart = (chartKey: string) => {
@@ -650,7 +723,6 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
     }) => {
         const { chartKey, title, data, chartType, options, width = '100%', height = '240px' } = props;
         const visible = visibleCharts[chartKey] ?? true;
-
         if (!visible && activeDetails?.key === chartKey) {
             return (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -658,10 +730,11 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
                         <Text variant="large">{title} — Data</Text>
                         <DefaultButton text="Back to Chart" onClick={() => handleBackToChart(chartKey)} />
                     </div>
-                    <DetailsList items={activeDetails.items} columns={activeDetails.columns} />
+                    <DetailsList items={activeDetails.items} columns={activeDetails.columns} selectionMode={SelectionMode.none} checkboxVisibility={CheckboxVisibility.hidden} />
                 </div>
             );
         }
+
 
         return (
             <Chart
@@ -1146,8 +1219,7 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
                 effortVariationTrendData.push(['Month', 'Effort Variation', { role: 'annotation', type: 'string' }, 'LSL', 'USL']);
                 Object.keys(groupedByMonth).forEach(monthKey => {
                     const effortVariation = ((groupedByMonth[monthKey].ActualEffort - groupedByMonth[monthKey].PlannedEffort) * 100) / groupedByMonth[monthKey].PlannedEffort;
-                    effortVariationTrendData.push([monthKey, parseFloat(effortVariation.toFixed(4)), parseFloat(effortVariation.toFixed(4)), USLLSLValuesEV[0].LSL, USLLSLValuesEV[0].USL]);
-
+                    effortVariationTrendData.push([monthKey, parseFloat(effortVariation.toFixed(2)), parseFloat(effortVariation.toFixed(2)), USLLSLValuesEV[0].LSL, USLLSLValuesEV[0].USL]);
                 });
                 setefforVatiationChartData(effortVariationTrendData);
                 //Overall Productivity Trend Data
@@ -1158,7 +1230,7 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
                 });
                 Object.keys(groupedByMonth).forEach(monthKey => {
                     const overallProductivity = (groupedByMonth[monthKey].ActualEffort) / (groupedByMonth[monthKey].size);
-                    overallProductivityTrendData.push([monthKey, parseFloat(overallProductivity.toFixed(4)), parseFloat(overallProductivity.toFixed(4)), USLLSLValuesOAP[0].LSL, USLLSLValuesOAP[0].USL]);
+                    overallProductivityTrendData.push([monthKey, parseFloat(overallProductivity.toFixed(2)), parseFloat(overallProductivity.toFixed(2)), USLLSLValuesOAP[0].LSL, USLLSLValuesOAP[0].USL]);
                 });
                 setOverallProductivityChartData(overallProductivityTrendData);
                 //Scheduled Variation Trend Data
@@ -1169,12 +1241,9 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
                 });
                 Object.keys(groupedByMonth).forEach(monthKey => {
                     const scheduledVariation = (groupedByMonth[monthKey].plannedDuration !== 0) ? ((groupedByMonth[monthKey].ActualEffort - groupedByMonth[monthKey].PlannedEffort) * 100) / groupedByMonth[monthKey].plannedDuration : 0;
-                    scheduledVatiationTrendData.push([monthKey, parseFloat(scheduledVariation.toFixed(4)), parseFloat(scheduledVariation.toFixed(4)), USLLSLValuesSVTrend[0].LSL, USLLSLValuesSVTrend[0].USL]);
+                    scheduledVatiationTrendData.push([monthKey, parseFloat(scheduledVariation.toFixed(2)), parseFloat(scheduledVariation.toFixed(2)), USLLSLValuesSVTrend[0].LSL, USLLSLValuesSVTrend[0].USL]);
                 });
                 setscheduledVatiationChartData(scheduledVatiationTrendData);
-
-
-
 
 
 
@@ -1190,11 +1259,11 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
                 meanOverallProductivity = WorkLogItemWithPlannedandActualEfforts.filter(i => new Date(i.ActualEndDate).getMonth().toString() == selectedMonth).reduce((sum, x) => sum + x.OverAllProductivity, 0) / WorkLogItemWithPlannedandActualEfforts.length;
                 const varianceEV = WorkLogItemWithPlannedandActualEfforts.filter(i => new Date(i.ActualEndDate).getMonth().toString() == selectedMonth).reduce((acc, x) => acc + (x.EffortVariation - meanEffortVariation) ** 2, 0) / WorkLogItemWithPlannedandActualEfforts.length;
                 const varianceSV = WorkLogItemWithPlannedandActualEfforts.filter(i => new Date(i.ActualEndDate).getMonth().toString() == selectedMonth).reduce((acc, x) => acc + (x.ScheduledVariation - meanSV) ** 2, 0) / WorkLogItemWithPlannedandActualEfforts.length;
-                standardDeviationEV = parseFloat(Math.sqrt(varianceEV).toFixed(4));
-                standardDeviationSV = parseFloat(Math.sqrt(varianceSV).toFixed(4))
-                setMeanEffortVariation(parseFloat(meanEffortVariation.toFixed(4)));
-                setMeanSV(parseFloat(meanEffortVariation.toFixed(4)));
-                setMeanOverallProductivity(parseFloat(meanOverallProductivity.toFixed(4)))
+                standardDeviationEV = parseFloat(Math.sqrt(varianceEV).toFixed(2));
+                standardDeviationSV = parseFloat(Math.sqrt(varianceSV).toFixed(2))
+                setMeanEffortVariation(parseFloat(meanEffortVariation.toFixed(2)));
+                setMeanSV(parseFloat(meanEffortVariation.toFixed(2)));
+                setMeanOverallProductivity(parseFloat(meanOverallProductivity.toFixed(2)))
                 setStandardDeviationOfEV(standardDeviationEV);
                 setStandardDeviationOfSV(standardDeviationSV);
                 const OAPSize = WorkLogItemWithPlannedandActualEfforts.filter(i => new Date(i.ActualEndDate).getMonth().toString() == selectedMonth).reduce((sum, x) => sum + x.size, 0);
@@ -1269,7 +1338,7 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
                 }
                 let AllocatedEffort = Number(teamSize) * totalAvailableHours;
                 let resourceUtilization = (TotalActualEffort / AllocatedEffort) * 100;
-                setResourceUtilization(parseFloat(resourceUtilization.toFixed(4)));
+                setResourceUtilization(parseFloat(resourceUtilization.toFixed(2)));
 
                 const monthlyEffort = new Map<string, number>();
                 const addEffort = (raw: any, val: number) => {
@@ -1305,9 +1374,8 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
                 monthlyEffortKeys.sort().forEach(key => {
                     const sum = monthlyEffort.get(key) || 0;
                     const value = monthlyAllocation === 0 ? 0 : (sum / monthlyAllocation) * 100;
-                    trendRows.push([key, parseFloat(value.toFixed(4)), parseFloat(value.toFixed(4)).toString(), USLLSLValuesRU[0].LSL, USLLSLValuesRU[0].USL]);
+                    trendRows.push([key, parseFloat(value.toFixed(2)), parseFloat(value.toFixed(2)).toString(), USLLSLValuesRU[0].LSL, USLLSLValuesRU[0].USL]);
                 });
-
                 setResourceUtilizationTrendChartData(trendRows);
 
                 //To create a cost of quality we need Prevention cost, appraisal cost,failure cost
@@ -1392,6 +1460,7 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
                 }
 
                 // AMSEffortLogData: TaskType matches solution review/testing (tolerate 'soultion' spelling)
+
                 if (Array.isArray(AMSEffortLogData)) {
                     AMSEffortLogData.forEach(a => {
                         if (new Date(a?.ActualStartDate).getMonth().toString() !== selectedMonth) return;
@@ -1407,7 +1476,7 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
                 let preventionCost = 0;
                 preventionCost = ManagementEffortLogDataFiltered
                 let costOfQualityTotal = (preventionCost + appraisalCost + failureCost) * 100 / TotalActualEffort;
-                setcostOfQualityTotal(parseFloat(costOfQualityTotal.toFixed(4)));
+                setcostOfQualityTotal(parseFloat(costOfQualityTotal.toFixed(2)));
                 const monthKeyFrom = (raw: any) => {
                     if (!raw) return null;
                     const d = raw instanceof Date ? raw : new Date(raw);
@@ -1461,8 +1530,8 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
                     const totalCost = bucket.prevention + bucket.appraisal + bucket.failure;
                     coqTrendRows.push([
                         monthKey,
-                        parseFloat(((totalCost * 100) / denominator).toFixed(4)),
-                        parseFloat(((totalCost * 100) / denominator).toFixed(4)),
+                        parseFloat(((totalCost * 100) / denominator).toFixed(2)),
+                        parseFloat(((totalCost * 100) / denominator).toFixed(2)),
                         USLLSLValuesCOQ[0].LSL,
                         USLLSLValuesCOQ[0].USL
                     ]);
@@ -1559,19 +1628,19 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
                     key: 'codeReview',
                     Category: 'Code Review',
                     DefectCount: codeReviewDefs.length,
-                    TotalEffort: parseFloat(codeReviewDefs.reduce((sum, cr) => sum + findEffortForReq(cr.RequirementID ?? cr.Requirement), 0).toFixed(4))
+                    TotalEffort: parseFloat(codeReviewDefs.reduce((sum, cr) => sum + findEffortForReq(cr.RequirementID ?? cr.Requirement), 0).toFixed(2))
                 },
                 {
                     key: 'systemGroup',
                     Category: 'System/Integration/Regression',
                     DefectCount: systemDefs.length,
-                    TotalEffort: parseFloat(systemDefs.reduce((sum, d) => sum + findEffortForReq(d.Requirement ?? d.Requirement), 0).toFixed(4))
+                    TotalEffort: parseFloat(systemDefs.reduce((sum, d) => sum + findEffortForReq(d.Requirement ?? d.Requirement), 0).toFixed(2))
                 },
                 {
                     key: 'unitTesting',
                     Category: 'Unit Testing',
                     DefectCount: unitDefs.length,
-                    TotalEffort: parseFloat(unitDefs.reduce((sum, d) => sum + findEffortForReq(d.Requirement ?? d.Requirement), 0).toFixed(4))
+                    TotalEffort: parseFloat(unitDefs.reduce((sum, d) => sum + findEffortForReq(d.Requirement ?? d.Requirement), 0).toFixed(2))
                 }
             ];
             const columns: IColumn[] = [
@@ -1731,7 +1800,7 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
         },
         colors: ['#28a745', '#dc3545'], // keep in sync with series if you use colors
         annotations: {
-            alwaysOutside: true,  // set true if you prefer labels outside; false overlays the line/point
+            alwaysOutside: true,
             textStyle: { fontSize: 11, bold: true, color: '#333' },
             stem: { color: 'transparent', length: 0 }, // hide stems if overlaying points
         },
@@ -1744,6 +1813,87 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
         vAxis: { textStyle: { color: '#555' }, gridlines: { color: '#eee' } },
     };
 
+    React.useEffect(() => {
+        if (context) {
+            loadFacilitationData().catch(() => { });
+        }
+    }, [context]);
+    React.useEffect(() => {
+        facilitationChartData();
+    }, [facilitationReportData]);
+
+    const loadFacilitationData = async () => {
+        const genericServiceInstance: IGenericService = new GenericService(undefined, context);
+        genericServiceInstance.init(undefined, context);
+        const FacilitationRepo: IFacilitationReportRepository = new FacilitationReportRepository(genericServiceInstance);
+        FacilitationRepo.setService(genericServiceInstance);
+        let FacilitationValues = await getFacilitationValues(false, context, selectedProjectType);
+        const mapped = FacilitationValues.map(m => ({
+            ID: m.ID,
+            Category: m.Category,
+            Finding: m.Finding,
+            FindingDate: m.FindingDate,
+            ClosureDate: m.ClosureDate,
+            Status: m.Status,
+        }));
+        setFacilitationReportData(mapped);
+        console.log('FacilitationReportData:', facilitationReportData);
+    }
+
+    const daysFromNow = (findingDate: any): number => {
+        const target = new Date(findingDate);
+        const now = new Date();
+        const msPerDay = 24 * 60 * 60 * 1000;
+
+        // Difference in milliseconds
+        const diffMs = target.getTime() - now.getTime();
+
+        // Whole days (discard partial day)
+        return Math.floor(diffMs / msPerDay);
+    };
+
+
+
+    const facilitationChartData = (() => {
+        if (!facilitationReportData || facilitationReportData.length === 0) return [];
+        let facilitationDataForChart: any[] = [['Category', 'Count']];
+        const categoryCountMap = new Map<string, number>();
+        facilitationReportData.forEach(item => {
+            const category = item.Category || 'Uncategorized';
+            categoryCountMap.set(category, (categoryCountMap.get(category) || 0) + 1);
+        });
+        categoryCountMap.forEach((count, category) => {
+            facilitationDataForChart.push([category, count]);
+        });
+        let data = facilitationReportData.filter(i => i.Category === 'FC Finding')
+        let AgingData = [];
+        AgingData.push(['Aging', 'Findings']);
+        //daysFromNow(x.FindingDate)
+        AgingData.push(['>=7 days', data.filter(x => daysFromNow(x.FindingDate) >= 7).length])
+        AgingData.push(['<=30 days', data.filter(x => daysFromNow(x.FindingDate) <= 30).length])
+        AgingData.push(['>30 days', data.filter(x => daysFromNow(x.FindingDate) > 30).length])
+        //     ['Aging', 'Findings'],
+        //     ['>=7 days', 10],
+        //     ['<=30 days', 2],
+        //     ['>30 days', 5],
+
+
+        setFacilitationReportDataForChart(facilitationDataForChart);
+        setagingFindingsData(AgingData);
+        console.log(AgingData);
+    });
+
+    // const PCIChartData =(()=>{
+    //     //get SQA from PPOApprovers and filter Management Task Data log data
+    //     ManagementTaskLogData.filter(item=>{
+    //         item.updated
+    //     })
+    //     PPOApproversData
+    //     // countOfOpenNCS=facilitationReportData.
+    //     // countOfOpenObservations=
+    //     // countOfOpenFCFindings=
+    //     // facilitationReportData
+    // })
 
     return (
         <div style={containerStyle}>
@@ -1774,6 +1924,7 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
                         <PrimaryButton text="Export to XLSX" onClick={exportToCsv} />
                     </Stack>
                 </header>
+
 
                 <section style={{ margin: '20px 0' }}>
                     <div style={kpiAreaStyle}>
@@ -1813,7 +1964,7 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
                 <Dialog
                     hidden={!isDialogOpen}
                     onDismiss={closeDialog}
-                    dialogContentProps={{ type: DialogType.largeHeader, title: dialogPivotKey || '' }}
+                    dialogContentProps={{ type: DialogType.largeHeader, title: dialogPivotKey == 'Defect density' ? 'Defect Density' : dialogPivotKey || '' }}
                     modalProps={{ isBlocking: false }}
                     minWidth={600}
                     maxWidth={900}
@@ -1896,6 +2047,8 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
                                         <DetailsList
                                             items={defectsDetailsListItems}
                                             columns={defectsDetailsListColumns}
+                                            selectionMode={SelectionMode.none}
+                                            checkboxVisibility={CheckboxVisibility.hidden}
                                         />
                                     </div>
                                 </div>
@@ -2118,27 +2271,11 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
                 <section style={belowNavContainerStyle}>
                     <div style={halfChartBoxStyle}>
                         <Text variant="large" styles={{ root: { marginBottom: 8 } }}>Risk Summary</Text>
-                        {/* <Chart
-                            chartType="PieChart"
-                            width="100%"
-                            height="220px"
-                            data={criticalRiskData}
-                            options={{
-                                pieHole: 0.5,
-                                legend: { position: 'right' },
-                                slices: {
-                                    0: { color: '#e91e63' }, // Critical
-                                    1: { color: '#ff7043' }, // High
-                                    2: { color: '#ffc107' }, // Medium
-                                    3: { color: '#8bc34a' }, // Low
-                                },
-                            }}
-                        /> */}
                         <ClickableChart chartKey="Risk Summary" title="Risk Summary" chartType="ColumnChart" data={riskChartData} options={{
                             legend: { position: 'none' },
                             colors: ['#42a5f5'],
                             hAxis: { title: 'Risk Exposure' },
-                            vAxis: { title: 'Number of Risks', minValue: 0 },
+                            vAxis: { title: 'Number of Risks', minValue: 0, format: '0', gridlines: { color: '#eee' } },
                             bar: { groupWidth: '60%' },
                             annotations: {
                                 alwaysOutside: true,
@@ -2156,7 +2293,7 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
                     </div>
 
                     <div style={halfChartBoxStyle}>
-                        <Text variant="large" styles={{ root: { marginBottom: 8 } }}>Findings Summary (Total 736)</Text>
+                        <Text variant="large" styles={{ root: { marginBottom: 8 } }}>Findings Summary</Text>
                         <div>
                             {/* <Chart
                                 chartType="PieChart"
@@ -2169,7 +2306,7 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
                                     slices: { 0: { color: '#d32f2f' }, 1: { color: '#1976d2' }, 2: { color: '#388e3c' } },
                                 }}
                             /> */}
-                            <ClickableChart chartKey="findings" title="Findings by Type" chartType="PieChart" data={findingsTypeData} options={{ pieHole: 0.5, legend: { position: 'right' }, slices: { 0: { color: '#d32f2f' }, 1: { color: '#1976d2' }, 2: { color: '#388e3c' } } }} width="100%" height="180px" />
+                            <ClickableChart chartKey="findings" title="Findings by Type" chartType="PieChart" data={facilitationReportDataForChart} options={{ pieHole: 0, legend: { position: 'right' }, pieSliceTextStyle: { fontSize: 12, color: '#fff' }, slices: { 0: { color: '#d32f2f' }, 1: { color: '#1976d2' }, 2: { color: '#388e3c' } } }} width="100%" height="180px" />
                         </div>
 
                         {/* <div style={{ marginTop: 10 }}>
@@ -2204,12 +2341,50 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
                 </section>
 
                 {/* NEW: Aging findings chart (full-width within content wrapper) */}
-                <section style={{ marginTop: 12 }}>
-                    <div style={agingBoxStyle}>
+                <section style={belowNavContainerStyle}>
+                    <div style={halfChartBoxStyle}>
                         <Text variant="large" styles={{ root: { marginBottom: 8 } }}>Aging Findings</Text>
-                        <ClickableChart chartKey="aging" title="Aging Findings" chartType="ColumnChart" data={agingFindingsData} options={{ legend: { position: 'none' }, colors: ['#42a5f5'], hAxis: { title: 'Age bucket' }, vAxis: { title: 'Number of findings', minValue: 0 }, bar: { groupWidth: '60%' } }} width="100%" height="260px" />
-                        <div style={{ marginTop: 8 }}>
+                        <ClickableChart chartKey="aging" title="Aging Findings" chartType="ColumnChart" data={agingFindingsData} options={{ legend: { position: 'none' }, colors: ['#42a5f5'], hAxis: { title: 'Age bucket' }, vAxis: { title: 'Number of findings', minValue: 0, format: '0', gridlines: { color: '#eee' } }, bar: { groupWidth: '60%' } }} width="100%" height="260px" />
+                        {/* <div style={{ marginTop: 10 }}>
                             <Text variant="small">Summary: <strong>736</strong> open findings across aging buckets.</Text>
+                        </div> */}
+                    </div>
+                    <div style={halfChartBoxStyle}>
+                        <Text variant="large" styles={{ root: { marginBottom: 8 } }}>PCI</Text>
+                        <ClickableChart
+                            chartKey="PCI"
+                            title="Process Compliance Index (PCI)"
+                            chartType="LineChart"
+                            data={pciChartData}
+                            options={pciOptions}
+                            width="100%"
+                            height="260px"
+                        />
+                        {/* <div style={{ marginTop: 10 }}>
+                            <Text variant="small">Summary: <strong>736</strong> open findings across aging buckets.</Text>
+                        </div> */}
+                    </div>
+                </section>
+                <section style={{ margin: '20px 0' }}>
+                    <div style={kpiAreaStyle}>
+                        {/* Open items KPI cards */}
+                        <div style={{ ...kpiCardStyle(), cursor: 'default', border: '1px solid rgba(16,24,40,0.04)' }}>
+                            <div>
+                                <Text variant="small" styles={{ root: { color: '#666' } }}>Open Root Cause</Text>
+                                <div style={{ fontSize: 26, fontWeight: 700, marginTop: 8, marginBottom: 6, color: '#d9534f' }}>{2}</div>
+                            </div>
+                        </div>
+                        <div style={{ ...kpiCardStyle(), cursor: 'default', border: '1px solid rgba(16,24,40,0.04)' }}>
+                            <div>
+                                <Text variant="small" styles={{ root: { color: '#666' } }}>Open Issues</Text>
+                                <div style={{ fontSize: 26, fontWeight: 700, marginTop: 8, marginBottom: 6, color: '#f0ad4e' }}>{10}</div>
+                            </div>
+                        </div>
+                        <div style={{ ...kpiCardStyle(), cursor: 'default', border: '1px solid rgba(16,24,40,0.04)' }}>
+                            <div>
+                                <Text variant="small" styles={{ root: { color: '#666' } }}>Open Action Items</Text>
+                                <div style={{ fontSize: 26, fontWeight: 700, marginTop: 8, marginBottom: 6, color: '#5bc0de' }}>{11}</div>
+                            </div>
                         </div>
                     </div>
                 </section>

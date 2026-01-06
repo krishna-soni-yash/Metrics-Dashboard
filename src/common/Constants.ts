@@ -22,7 +22,8 @@ export class SubSiteListNames {
   public static RAIDLog: string = "RAIDLogs";
   public static TestingDefects: string = "Testing Defects";
   public static CodeReviewDefects: string = "Code Review Defects";
-  public static AMSTicketEffortLog : string ="AMSTicketEffortLog"
+  public static AMSTicketEffortLog : string ="AMSTicketEffortLog";
+  public static FacilitationReport : string ="FacilitationReport";
 }
 
 //RCA Site Configuration
@@ -44,14 +45,14 @@ export const selectedFields = [
   'Test_x0020_Scenario_x0020_ID',
   'Test_x0020_Case_x0020_ID',
   'Defect_x0020_Description',
-  'Review_x0020_method',
+  'Testing_x0020_Type',
   'Defect_x0020_detected_x0020_on',
   'Defect_x0020_Detected_x0020_by/EMail',
   'Defect_x0020_Status',
-  'Defect_x0020_Category',
-  'Defect_x0020_Classification_x002',
-  'Injected_x0020_Phase',
-  'Identified_x0020_Phase',
+  'Defect_x0020_Type',
+  'Defect_x0020_Classification',
+  'Defect_x0020_Origin_x0020_Phase',
+  'Defect_x0020_Detected_x0020_Phas',
   'Severity',
   'Priority',
   'Root_x0020_Cause',
