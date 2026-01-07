@@ -53,6 +53,9 @@ import { AMSEffortLogRepository } from '../../../../repositories/AMSRepository';
 import { set } from '@microsoft/sp-lodash-subset/lib/index';
 import IFacilitationReportRepository from '../../../../repositories/repositoryInterface/IFacilitationReportInterface';
 import { FacilitationReportRepository, getFacilitationValues } from '../../../../repositories/FacilitationReportRepository';
+import IRCARepository from '../../../../repositories/repositoryInterface/IRCARepository';
+import  { getRCAItems } from '../../../../repositories/RCARepository';
+import { RCARepository } from '../../../../repositories/RCARepository';
 //import { IMetrics } from '../../../../Models/IMetrics';
 
 interface DashboardProps {
@@ -121,8 +124,9 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
     const [defectsDetailsListColumns, setDefectsDetailsListColumns] = React.useState<IColumn[]>([]);
     const [facilitationReportData, setFacilitationReportData] = React.useState<any[]>([]);
     const [facilitationReportDataForChart, setFacilitationReportDataForChart] = React.useState<any[]>([]);
-    const [agingFindingsData,setagingFindingsData]= React.useState<any[]>([]);
-
+    const [agingFindingsData, setagingFindingsData] = React.useState<any[]>([]);
+    const [pciChartData,setpciChartData] = React.useState<any[]>([]);
+    const [RCAItems, setRCAItems] = React.useState<any[]>([]);
     // new KPI counts
     // const [openRootCauseCount, setOpenRootCauseCount] = React.useState<number>(0);
     // const [openIssuesCount, setOpenIssuesCount] = React.useState<number>(0);
@@ -193,7 +197,7 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
     //     ['Sep', 4.9, 4.0, 5.0],
     // ];
     // build KPIs from MetricsData; override CSI value with latestCsiValue when available
- const desiredOrder = [
+    const desiredOrder = [
         'Customer Satisfaction Index',
         'Schedule Variation',
         'Effort Variation',
@@ -204,103 +208,103 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
         'Resource Utilization'
     ];
 
-    let rawKpis:any[] = []
-    if(MetricsData.length>0){
-     rawKpis = (MetricsData || []).map(m => {
-        
-        try {
-            const safe = (v: any) => (v === undefined || v === null) ? null : v;
-            let goalLabel = m.goal;
-            // if (safe(m?.LSL) != null && safe(m?.USL) != null) goalLabel = `${m.LSL} - ${m.USL}`;
-            // else if (safe(m?.LSL) != null) goalLabel = `>= ${m.LSL}`;
-            // else if (safe(m?.USL) != null) goalLabel = `<= ${m.USL}`;
+    let rawKpis: any[] = []
+    if (MetricsData.length > 0) {
+        rawKpis = (MetricsData || []).map(m => {
 
-            let value = String(m?.value ?? '');
-            let status = 'red';
-            const title = String(m?.title ?? m?.Metrics ?? m?.id ?? 'Unknown');
-            const titleNormalized = title.trim().toLowerCase();
+            try {
+                const safe = (v: any) => (v === undefined || v === null) ? null : v;
+                let goalLabel = m.goal;
+                // if (safe(m?.LSL) != null && safe(m?.USL) != null) goalLabel = `${m.LSL} - ${m.USL}`;
+                // else if (safe(m?.LSL) != null) goalLabel = `>= ${m.LSL}`;
+                // else if (safe(m?.USL) != null) goalLabel = `<= ${m.USL}`;
+
+                let value = String(m?.value ?? '');
+                let status = 'red';
+                const title = String(m?.title ?? m?.Metrics ?? m?.id ?? 'Unknown');
+                const titleNormalized = title.trim().toLowerCase();
 
 
-            if (titleNormalized === 'customer satisfaction index' && latestCsiValue.length > 0) {
-                value = String(latestCsiValue[0].value || '');
-                const raw = Number(latestCsiValue[0].valueRaw);
-                status = (raw >= (m?.LSL ?? -Infinity) && raw <= (m?.USL ?? Infinity)) ? 'green' : 'red';
-                return { id: m?.id, title, value, goal: goalLabel, status, pivotKey: m?.pivotKey };
+                if (titleNormalized === 'customer satisfaction index' && latestCsiValue.length > 0) {
+                    value = String(latestCsiValue[0].value || '');
+                    const raw = Number(latestCsiValue[0].valueRaw);
+                    status = (raw >= (m?.LSL ?? -Infinity) && raw <= (m?.USL ?? Infinity)) ? 'green' : 'red';
+                    return { id: m?.id, title, value, goal: goalLabel, status, pivotKey: m?.pivotKey };
+                }
+
+
+                if (titleNormalized === 'effort variation' && MeanEffortVariation != null && StandardDeviationOfEV != null) {
+                    value = `<span style='color:#666;font-size:12px'>Mean:</span>${MeanEffortVariation}<br/><span style='color:#666;font-size:12px'>Std Dev:</span>${StandardDeviationOfEV}`;
+                    status = (MeanEffortVariation >= (m?.LSL ?? -Infinity) && MeanEffortVariation <= (m?.USL ?? Infinity)) ? 'green' : 'red';
+                    return { id: m?.id, title, value, goal: goalLabel, status, pivotKey: m?.pivotKey };
+                }
+
+
+                if (titleNormalized === 'schedule variation' && MeanSV != null && StandardDeviationSV != null) {
+                    value = `<span style='color:#666;font-size:12px'>Mean:</span>${MeanSV}<br/><span style='color:#666;font-size:12px'>Std Dev:</span>${StandardDeviationSV}`;
+                    status = (MeanSV >= (m?.LSL ?? -Infinity) && MeanSV <= (m?.USL ?? Infinity)) ? 'green' : 'red';
+                    return { id: m?.id, title, value, goal: goalLabel, status, pivotKey: m?.pivotKey };
+                }
+
+                if (titleNormalized === 'overall productivity' && MeanOverallProductivity != null && OverAllProductivitySize != null && ActualEffortOverAllProductivity != null) {
+                    value = `<span style='color:#666;font-size:12px'>Effort:</span>${ActualEffortOverAllProductivity}<br/><span style='color:#666;font-size:12px'>Size:</span>${OverAllProductivitySize}`;
+                    status = (MeanOverallProductivity >= (m?.LSL ?? -Infinity) && MeanOverallProductivity <= (m?.USL ?? Infinity)) ? 'green' : 'red';
+                    return { id: m?.id, title, value, goal: goalLabel, status, pivotKey: m?.pivotKey };
+                }
+
+
+                if (titleNormalized === 'delivered defect density' || titleNormalized === 'delivered defect density (post production)') {
+                    const cnt = defectCount || 0;
+                    value = `<span style='color:#666;font-size:12px'>Defects Count:</span>${cnt}`;
+                    status = (cnt >= (m?.LSL ?? -Infinity) && cnt <= (m?.USL ?? Infinity)) ? 'green' : 'red';
+
+                    return { id: m?.id, title: 'Post Delivery Defects', value, goal: goalLabel, status, pivotKey: m?.pivotKey };
+                }
+
+
+                if (titleNormalized === 'defect density' || titleNormalized === 'defect_density' || titleNormalized === 'internal defect density') {
+                    const cnt = codeReviewDefectCount || 0;
+                    value = `<span style='color:#666;font-size:12px'>Defects Count:</span>${cnt}`;
+                    status = (cnt >= (m?.LSL ?? -Infinity) && cnt <= (m?.USL ?? Infinity)) ? 'green' : 'red';
+                    return { id: m?.id, title: 'Internal Defects', value, goal: goalLabel, status, pivotKey: m?.pivotKey };
+                }
+
+                if (titleNormalized === 'resource utilization' || titleNormalized === 'resource_utilization') {
+
+                    value = `${resourceUtilization.toFixed(2)}%`;
+                    status = (resourceUtilization >= (m?.LSL ?? -Infinity) && resourceUtilization <= (m?.USL ?? Infinity)) ? 'green' : 'red';
+                    return { id: m?.id, title: m?.title, value, goal: goalLabel, status, pivotKey: m?.pivotKey };
+                }
+                if (titleNormalized === 'cost of quality' || titleNormalized === 'cost_of_quality') {
+
+                    value = `${costOfQualityTotal.toFixed(2)}%`;
+                    status = (costOfQualityTotal >= (m?.LSL ?? -Infinity) && costOfQualityTotal <= (m?.USL ?? Infinity)) ? 'green' : 'red';
+                    return { id: m?.id, title: m?.title, value, goal: goalLabel, status, pivotKey: m?.pivotKey };
+                }
+
+                // default fallback KPI
+                return {
+                    id: m?.id,
+                    title,
+                    value,
+                    goal: goalLabel,
+                    status,
+                    pivotKey: m?.pivotKey,
+                };
+            } catch (err) {
+                // defensive fallback — don't break render if one metric fails
+                console.error('KPI mapping error', err, m);
+                return { id: m?.id ?? Math.random(), title: String(m?.title ?? m?.Metrics ?? 'Metric'), value: String(m?.value ?? ''), goal: '', status: 'red', pivotKey: m?.pivotKey ?? '' };
             }
-
-
-            if (titleNormalized === 'effort variation' && MeanEffortVariation != null && StandardDeviationOfEV != null) {
-                value = `<span style='color:#666;font-size:12px'>Mean:</span>${MeanEffortVariation}<br/><span style='color:#666;font-size:12px'>Std Dev:</span>${StandardDeviationOfEV}`;
-                status = (MeanEffortVariation >= (m?.LSL ?? -Infinity) && MeanEffortVariation <= (m?.USL ?? Infinity)) ? 'green' : 'red';
-                return { id: m?.id, title, value, goal: goalLabel, status, pivotKey: m?.pivotKey };
-            }
-
-
-            if (titleNormalized === 'schedule variation' && MeanSV != null && StandardDeviationSV != null) {
-                value = `<span style='color:#666;font-size:12px'>Mean:</span>${MeanSV}<br/><span style='color:#666;font-size:12px'>Std Dev:</span>${StandardDeviationSV}`;
-                status = (MeanSV >= (m?.LSL ?? -Infinity) && MeanSV <= (m?.USL ?? Infinity)) ? 'green' : 'red';
-                return { id: m?.id, title, value, goal: goalLabel, status, pivotKey: m?.pivotKey };
-            }
-
-            if (titleNormalized === 'overall productivity' && MeanOverallProductivity != null && OverAllProductivitySize != null && ActualEffortOverAllProductivity != null) {
-                value = `<span style='color:#666;font-size:12px'>Effort:</span>${ActualEffortOverAllProductivity}<br/><span style='color:#666;font-size:12px'>Size:</span>${OverAllProductivitySize}`;
-                status = (MeanOverallProductivity >= (m?.LSL ?? -Infinity) && MeanOverallProductivity <= (m?.USL ?? Infinity)) ? 'green' : 'red';
-                return { id: m?.id, title, value, goal: goalLabel, status, pivotKey: m?.pivotKey };
-            }
-
-
-            if (titleNormalized === 'delivered defect density' || titleNormalized === 'delivered defect density (post production)') {
-                const cnt = defectCount || 0;
-                value = `<span style='color:#666;font-size:12px'>Defects Count:</span>${cnt}`;
-                status = (cnt >= (m?.LSL ?? -Infinity) && cnt <= (m?.USL ?? Infinity)) ? 'green' : 'red';
-
-                return { id: m?.id, title: 'Post Delivery Defects', value, goal: goalLabel, status, pivotKey: m?.pivotKey };
-            }
-
-
-            if (titleNormalized === 'defect density' || titleNormalized === 'defect_density' || titleNormalized === 'internal defect density') {
-                const cnt = codeReviewDefectCount || 0;
-                value = `<span style='color:#666;font-size:12px'>Defects Count:</span>${cnt}`;
-                status = (cnt >= (m?.LSL ?? -Infinity) && cnt <= (m?.USL ?? Infinity)) ? 'green' : 'red';
-                return { id: m?.id, title: 'Internal Defects', value, goal: goalLabel, status, pivotKey: m?.pivotKey };
-            }
-
-            if (titleNormalized === 'resource utilization' || titleNormalized === 'resource_utilization') {
-
-                value = `${resourceUtilization.toFixed(2)}%`;
-                status = (resourceUtilization >= (m?.LSL ?? -Infinity) && resourceUtilization <= (m?.USL ?? Infinity)) ? 'green' : 'red';
-                return { id: m?.id, title: m?.title, value, goal: goalLabel, status, pivotKey: m?.pivotKey };
-            }
-            if (titleNormalized === 'cost of quality' || titleNormalized === 'cost_of_quality') {
-
-                value = `${costOfQualityTotal.toFixed(2)}%`;
-                status = (costOfQualityTotal >= (m?.LSL ?? -Infinity) && costOfQualityTotal <= (m?.USL ?? Infinity)) ? 'green' : 'red';
-                return { id: m?.id, title: m?.title, value, goal: goalLabel, status, pivotKey: m?.pivotKey };
-            }
-
-            // default fallback KPI
-            return {
-                id: m?.id,
-                title,
-                value,
-                goal: goalLabel,
-                status,
-                pivotKey: m?.pivotKey,
-            };
-        } catch (err) {
-            // defensive fallback — don't break render if one metric fails
-            console.error('KPI mapping error', err, m);
-            return { id: m?.id ?? Math.random(), title: String(m?.title ?? m?.Metrics ?? 'Metric'), value: String(m?.value ?? ''), goal: '', status: 'red', pivotKey: m?.pivotKey ?? '' };
-        }
-    });
-}else{
-    rawKpis=desiredOrder
-}
+        });
+    } else {
+        rawKpis = desiredOrder
+    }
 
     // Reorder KPIs to the requested display priority (case-insensitive).
     // Desired order: Customer Satisfaction Index, Schedule Variation, Effort Variation,
     // Post Delivery Defects, Overall Productivity, Internal Defects, Cost of Quality, Resource Utilization
-   
+
 
     const remaining = [...rawKpis];
     const orderedKpis: any[] = [];
@@ -412,17 +416,8 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
     //     ['>30 days', 5],
     // ];
 
-    // NEW: sample PCI (Process Compliance Index) time series similar to provided image
-    const pciChartData = [
-        ['Date', 'PCI', { role: 'annotation', type: 'string' }],
-        ['19-Sep-24', -50, '-50'],
-        ['26-Sep-24', -60, '-60'],
-        ['03-Oct-24', -60, '-60'],
-        ['10-Oct-24', -60, '-60'],
-        ['17-Oct-24', -40, '-40'],
-        ['24-Oct-24', -20, '-20'],
-        ['31-Oct-24', -20, '-20']
-    ];
+    // PCI (Process Compliance Index) data is computed from Management effort and facilitation findings
+    //const pciChartData = buildPCIChartData();
 
     const pciOptions = {
         title: 'Process Compliance Index (PCI)',
@@ -833,11 +828,11 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
     const RiskChartDatafun = () => {
         if (RAIDdata.length > 0) {
             //filter risk where RE >=80
-            const REGEQ80 = RAIDdata.filter(i => i?.RiskExposure >= 80).length
+            const REGEQ80 = RAIDdata.filter(i => i?.RiskExposure >= 80 && i?.SelectType =='Risk').length
             //filter risk where RE >=60 and RE < 80
-            const REGEQ60 = RAIDdata.filter(i => i?.RiskExposure >= 60 && i?.RiskExposure < 80).length
+            const REGEQ60 = RAIDdata.filter(i => i?.RiskExposure >= 60 && i?.RiskExposure < 80&& i?.SelectType =='Risk').length
             //filter risk where RE >= 0 and RE < 60
-            const REGEQ0 = RAIDdata.filter(i => i?.RiskExposure >= 0 && i?.RiskExposure < 60).length
+            const REGEQ0 = RAIDdata.filter(i => i?.RiskExposure >= 0 && i?.RiskExposure < 60 && i?.SelectType =='Risk').length
             const riskChartData = [['Risk Exposure', 'Count', { role: 'annotation', type: 'string' }],
             ['RE >=80', REGEQ80, REGEQ80],
             ['RE >=60 and RE < 80', REGEQ60, REGEQ60],
@@ -1217,7 +1212,7 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
                 });
                 let effortVariationTrendData: any[] = []
                 effortVariationTrendData.push(['Month', 'Effort Variation', { role: 'annotation', type: 'string' }, 'LSL', 'USL']);
-                Object.keys(groupedByMonth).forEach(monthKey => {
+                Object.keys(groupedByMonth).sort((a, b) => a.localeCompare(b)).forEach(monthKey => {
                     const effortVariation = ((groupedByMonth[monthKey].ActualEffort - groupedByMonth[monthKey].PlannedEffort) * 100) / groupedByMonth[monthKey].PlannedEffort;
                     effortVariationTrendData.push([monthKey, parseFloat(effortVariation.toFixed(2)), parseFloat(effortVariation.toFixed(2)), USLLSLValuesEV[0].LSL, USLLSLValuesEV[0].USL]);
                 });
@@ -1228,7 +1223,7 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
                 let USLLSLValuesOAP = MetricsData.filter(m => m.title === 'Overall Productivity').map(i => {
                     return { USL: i.USL, LSL: i.LSL, Title: i.Title }
                 });
-                Object.keys(groupedByMonth).forEach(monthKey => {
+                Object.keys(groupedByMonth).sort((a, b) => a.localeCompare(b)).forEach(monthKey => {
                     const overallProductivity = (groupedByMonth[monthKey].ActualEffort) / (groupedByMonth[monthKey].size);
                     overallProductivityTrendData.push([monthKey, parseFloat(overallProductivity.toFixed(2)), parseFloat(overallProductivity.toFixed(2)), USLLSLValuesOAP[0].LSL, USLLSLValuesOAP[0].USL]);
                 });
@@ -1239,7 +1234,7 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
                 let USLLSLValuesSVTrend = MetricsData.filter(m => m.title === 'Schedule Variation').map(i => {
                     return { USL: i.USL, LSL: i.LSL, Title: i.Title }
                 });
-                Object.keys(groupedByMonth).forEach(monthKey => {
+                Object.keys(groupedByMonth).sort((a, b) => a.localeCompare(b)).forEach(monthKey => {
                     const scheduledVariation = (groupedByMonth[monthKey].plannedDuration !== 0) ? ((groupedByMonth[monthKey].ActualEffort - groupedByMonth[monthKey].PlannedEffort) * 100) / groupedByMonth[monthKey].plannedDuration : 0;
                     scheduledVatiationTrendData.push([monthKey, parseFloat(scheduledVariation.toFixed(2)), parseFloat(scheduledVariation.toFixed(2)), USLLSLValuesSVTrend[0].LSL, USLLSLValuesSVTrend[0].USL]);
                 });
@@ -1371,7 +1366,7 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
                 let USLLSLValuesRU = MetricsData.filter(m => m.title === 'Resource Utilization').map(i => {
                     return { USL: i.USL, LSL: i.LSL, Title: i.Title }
                 });
-                monthlyEffortKeys.sort().forEach(key => {
+                monthlyEffortKeys.sort((a, b) => a.localeCompare(b)).forEach(key => {
                     const sum = monthlyEffort.get(key) || 0;
                     const value = monthlyAllocation === 0 ? 0 : (sum / monthlyAllocation) * 100;
                     trendRows.push([key, parseFloat(value.toFixed(2)), parseFloat(value.toFixed(2)).toString(), USLLSLValuesRU[0].LSL, USLLSLValuesRU[0].USL]);
@@ -1519,7 +1514,7 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
                 monthlyBuckets.forEach((_, k) => {
                     sortedMonths.push(k);
                 });
-                sortedMonths.sort();
+                sortedMonths.sort((a, b) => a.localeCompare(b));
                 let USLLSLValuesCOQ = MetricsData.filter(m => m.title === 'Cost of Quality').map(i => {
                     return { USL: i.USL, LSL: i.LSL, Title: i.Title }
                 });
@@ -1770,6 +1765,42 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
 
     }, [csiData, MetricsData, context]);
 
+   
+function parseDDMMYYYY(input: string): Date {
+  if (typeof input !== 'string') return new Date(NaN);
+
+  const s = input.trim();
+
+  // Remove time part if present (e.g., "06/01/2026 12:00 AM")
+  const datePart = s.split(' ')[0];
+
+  // Accept separators: / - . or mixed
+  const parts = datePart.split(/[\/\-.]/);
+  if (parts.length !== 3) return new Date(NaN);
+
+  let [ddStr, mmStr, yyyyStr] = parts.map(p => p.trim());
+
+  // Handle 2-digit year by assuming 2000–2099 (adjust to your business rule)
+  if (yyyyStr.length === 2) yyyyStr = '20' + yyyyStr;
+
+  const dd = Number(ddStr);
+  const mm = Number(mmStr);
+  const yyyy = Number(yyyyStr);
+
+  // Basic numeric checks
+  if (!Number(dd) || !Number(mm) || !Number(yyyy)) return new Date(NaN);
+  if (mm < 1 || mm > 12) return new Date(NaN);
+
+  // Days in month (handles leap years)
+  const daysInMonth = new Date(yyyy, mm, 0).getDate(); // using local month to compute count
+  if (dd < 1 || dd > daysInMonth) return new Date(NaN);
+
+  // Construct date in UTC to avoid timezone shift
+  return new Date(Date.UTC(yyyy, mm - 1, dd));
+}
+
+
+
     const csiTrendData = (() => {
         if (!csiData || csiData.length === 0) return [];
         let USLLSLValues: any[] = [];
@@ -1781,12 +1812,23 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
         let csiTrendataForChart: any[] = [['Date', 'CSI', { role: 'annotation', type: 'string' }, 'Lower Limit', 'Upper Limit']];
         if (USLLSLValues.length > 0) {
 
-            csiData.forEach((it: any) => {
-                csiTrendataForChart.push([new Date(it.CSATAquiredDate).toLocaleDateString('en-US'), Number(it.Title), Number(it.Title), Number(USLLSLValues[0].LSL), Number(USLLSLValues[0].USL)]);
-            });
+
+            const rows = csiData
+                .slice()
+                .sort((a: any, b: any) => new Date(a.CSATAquiredDate).getTime() - new Date(b.CSATAquiredDate).getTime())
+                .map((it: any) => {
+                   
+                    // const d = parseDDMMYYYY(it.CSATAquiredDate);
+                    //  console.log('date',d)
+                    // const label = d.toLocaleDateString('en-US');
+                    const value = Number(it.Title);
+                    csiTrendataForChart.push([new Date(it.CSATAquiredDate).toLocaleDateString('en-US'), value, value, Number(USLLSLValues[0].LSL), Number(USLLSLValues[0].USL)]);
+                });
+
         }
 
         setCSITrendData(csiTrendataForChart);
+        console.log('csiTrendataForChart',csiTrendataForChart)
 
     });
 
@@ -1882,18 +1924,132 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
         setagingFindingsData(AgingData);
         console.log(AgingData);
     });
+    React.useEffect(() => {
+        if (context && Array.isArray(PPOApproversData) && PPOApproversData.length > 0 && ManagementEffortLogData.length > 0 && facilitationReportData.length > 0) {
+            let pci = buildPCIChartData();
+            setpciChartData(pci);
+        }
+    }, [context,PPOApproversData,ManagementEffortLogData,facilitationReportData]);
 
-    // const PCIChartData =(()=>{
-    //     //get SQA from PPOApprovers and filter Management Task Data log data
-    //     ManagementTaskLogData.filter(item=>{
-    //         item.updated
-    //     })
-    //     PPOApproversData
-    //     // countOfOpenNCS=facilitationReportData.
-    //     // countOfOpenObservations=
-    //     // countOfOpenFCFindings=
-    //     // facilitationReportData
-    // })
+    // Build PCI chart data:
+    function buildPCIChartData(): any[] {
+        try {
+            const rows: any[] = [['Date', 'PCI', { role: 'annotation', type: 'string' }]];
+
+            const siteUrl = context?.pageContext?.web?.absoluteUrl || '';
+
+            // gather reviewer identifiers for current site (be tolerant of field names)
+            const reviewerValues = new Set<string>();
+            if (Array.isArray(PPOApproversData)) {
+                PPOApproversData.forEach(p => {
+                    if (!p) return;
+                    if (String(p.SiteURL || '') !== String(siteUrl)) return;
+                    const candidates = [p.ReviewerName, p.Reviewer, p.ReviewerEmail, p.Email, p.Title];
+                    candidates.forEach(c => {
+                        if (c) reviewerValues.add(String(c).trim().toLowerCase());
+                    });
+                });
+            }
+
+            // filter management effort entries where reviewer matches and activity is audit(s)
+            const managementFiltered = (ManagementEffortLogData || []).filter(m => {
+                if (!m) return false;
+                const activity = String(m.ManagementTaskActivity || '').trim().toLowerCase();
+                if (activity.indexOf('audits') === -1) return false;
+                const updatedBy = String(m.UpdatedBy || '').trim().toLowerCase();
+                if (!updatedBy) return false;
+                if (reviewerValues.size === 0) return false;
+                return reviewerValues.has(updatedBy);
+            });
+
+            // build map of findingDate -> { findings: n, matchedAudits: m, nc, observation, fcFinding }
+            const bucket = new Map<string, any>();
+
+            const normalizeKey = (raw: any) => {
+                if (!raw) return null;
+                const d = raw instanceof Date ? raw : new Date(raw);
+                if (isNaN(d.getTime())) return null;
+                return `${d.getFullYear()}-${('0' + (d.getMonth() + 1)).slice(-2)}-${('0' + d.getDate()).slice(-2)}`;
+            };
+
+            const formatLabel = (key: string) => {
+                const parts = key.split('-');
+                if (parts.length !== 3) return key;
+                const yyyy = Number(parts[0]);
+                const mm = Number(parts[1]);
+                const dd = Number(parts[2]);
+                const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                const yy = String(yyyy).slice(-2);
+                return `${('0' + dd).slice(-2)}-${months[mm - 1]}-${yy}`;
+            };
+
+            // count findings grouped by FindingDate (use facilitationReportData's FindingDate)
+            // track open counts for NC, Observation and FC Finding per date
+            (facilitationReportData || []).forEach(f => {
+                const key = normalizeKey(f?.FindingDate || f?.FindingDate);
+                if (!key) return;
+                const cur = bucket.get(key) || { findings: 0, matched: 0, nc: 0, observation: 0, fcFinding: 0 } as any;
+                cur.findings += 1;
+                const status = String(f?.Status || '').trim().toLowerCase();
+                const cat = String(f?.Category || '').trim().toLowerCase();
+                if (status === 'open') {
+                    if (cat.indexOf('nc') !== -1) cur.nc += 1;
+                    else if (cat.indexOf('observation') !== -1) cur.observation += 1;
+                    else if (cat.indexOf('fc finding') !== -1 || (cat.indexOf('fc') !== -1 && cat.indexOf('finding') !== -1) || cat === 'fc') cur.fcFinding += 1;
+                }
+                bucket.set(key, cur);
+            });
+
+            // for each management entry, check if ActualStartDate matches any finding date and increment matched
+            (managementFiltered || []).forEach(m => {
+                const key = normalizeKey(m?.ActualStartDate);
+                if (!key) return;
+                const cur = bucket.get(key) || { findings: 0, matched: 0 };
+                cur.matched += 1;
+                bucket.set(key, cur);
+            });
+
+            // prepare sorted rows
+            const keys: string[] = [];
+            bucket.forEach((_, k) => keys.push(k));
+            keys.sort();
+
+            keys.forEach(k => {
+                const val = bucket.get(k)!;
+                // PCI: negative weighted sum of open counts per user request
+                // PCIvalue == -(20*openNCCount + 10*openObservationCount + 10*openFCFindingCount)
+                const openNC = Number(val.nc || 0);
+                const openObs = Number(val.observation || 0);
+                const openFC = Number(val.fcFinding || 0);
+                console.log(`PCI for ${k}: NC=${openNC}, Obs=${openObs}, FC=${openFC}`);    
+                const pci = parseFloat((-((20 * openNC) + (10 * openObs) + (10 * openFC))).toFixed(2));
+                rows.push([formatLabel(k), pci, String(pci)]);
+            });
+
+            // if no rows, return a small placeholder series to avoid empty chart errors
+            if (rows.length === 1) {
+                rows.push([formatLabel(new Date().toISOString().slice(0,10)), 0, '0']);
+            }
+
+            return rows;
+        } catch (err) {
+            console.error('Failed to build PCI chart data', err);
+            return [['Date', 'PCI', { role: 'annotation', type: 'string' }], [new Date().toLocaleDateString('en-US'), 0, '0']];
+        }
+    }
+    React.useEffect(() => {
+		fetchRCAItems();
+	}, [context]);
+
+     const fetchRCAItems = async () => {
+		const genericServiceInstance: IGenericService = new GenericService(undefined, context);
+		genericServiceInstance.init(undefined, context);
+		const RCARepo: IRCARepository = new RCARepository(genericServiceInstance);
+		RCARepo.setService(genericServiceInstance);
+		const RAitems = await getRCAItems(true, context);
+		setRCAItems(RAitems);
+	}
+
 
     return (
         <div style={containerStyle}>
@@ -2371,13 +2527,13 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
                         <div style={{ ...kpiCardStyle(), cursor: 'default', border: '1px solid rgba(16,24,40,0.04)' }}>
                             <div>
                                 <Text variant="small" styles={{ root: { color: '#666' } }}>Open Root Cause</Text>
-                                <div style={{ fontSize: 26, fontWeight: 700, marginTop: 8, marginBottom: 6, color: '#d9534f' }}>{2}</div>
+                                <div style={{ fontSize: 26, fontWeight: 700, marginTop: 8, marginBottom: 6, color: '#d9534f' }}>{RCAItems.filter(i=>i?.ActualClosureDateCorrection ==""||i?.ActualClosureDateCorrective ==""||i?.ActualClosureDatePreventive =="").length}</div>
                             </div>
                         </div>
                         <div style={{ ...kpiCardStyle(), cursor: 'default', border: '1px solid rgba(16,24,40,0.04)' }}>
                             <div>
                                 <Text variant="small" styles={{ root: { color: '#666' } }}>Open Issues</Text>
-                                <div style={{ fontSize: 26, fontWeight: 700, marginTop: 8, marginBottom: 6, color: '#f0ad4e' }}>{10}</div>
+                                <div style={{ fontSize: 26, fontWeight: 700, marginTop: 8, marginBottom: 6, color: '#f0ad4e' }}>{RAIDdata.filter(i => i?.SelectType === 'Issue' && i?.RiskStatus == "In Progress").length}</div>
                             </div>
                         </div>
                         <div style={{ ...kpiCardStyle(), cursor: 'default', border: '1px solid rgba(16,24,40,0.04)' }}>

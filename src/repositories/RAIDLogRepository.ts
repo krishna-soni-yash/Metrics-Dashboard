@@ -67,7 +67,7 @@ export class RAIDLogRepository implements IRAIDLogRepository {
                 //   &$expand=Author
                 //   &$orderby=Created desc
                 //   &$top=1
-                  filter: "SelectType eq 'Risk'"
+                 // filter: "SelectType eq 'Risk'"
                 // filter: 'IsActive eq true and ProjectType in (' + (selectedProjectTypes?.map(pt => `'${pt}'`).join(',') || '') + ')',
 
             });
