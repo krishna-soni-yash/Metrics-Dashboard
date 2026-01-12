@@ -121,7 +121,7 @@ export class MetricsRepository implements IProjectMetricsRepository {
     }
   }
 
-  public async getMetricsFromProjectMetrics(useCache: boolean = true, context?: WebPartContext, selectedMetrics?: string, selectedProjectType?: string): Promise<IMetrics[]> {
+  public async getMetricsFromProjectMetrics(useCache: boolean = false, context?: WebPartContext, selectedMetrics?: string, selectedProjectType?: string): Promise<IMetrics[]> {
     const now = Date.now();
 
     if (useCache && this.cache && (now - this.cacheTimestamp) < this.CACHE_DURATION) {
@@ -260,7 +260,7 @@ export class MetricsRepository implements IProjectMetricsRepository {
         CausalAnalysisTrigger: it?.CausalAnalysisTrigger ?? '',
         ProbabilityOfSuccessThreshold: it?.ProbabilityOfSuccessThreshold ?? '',
       })) as unknown as IMetrics[];
-
+      this.refresh();
       this.cache = normalized;
       this.cacheTimestamp = now;
 
@@ -294,7 +294,7 @@ export class MetricsRepository implements IProjectMetricsRepository {
       const normalized = (items || []).map((it: any) => ({
         ID: typeof it?.ID === 'number' ? it.ID : (typeof it?.Id === 'number' ? it.Id : 0),
       })) as unknown as IMetrics[];
-
+      this.refresh();
       this.cache = normalized;
       this.cacheTimestamp = now;
 

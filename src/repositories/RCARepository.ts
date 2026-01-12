@@ -3,7 +3,7 @@ import IGenericService from '../services/IGenericServices';
 import { WebPartContext } from '@microsoft/sp-webpart-base';
 import { IRCAList } from '../Models/IRCAList';
 import ErrorMessages from '../common/ErrorMessages';
-import { SubSiteListNames, selectedFields, expandFields } from '../common/Constants';
+import { SubSiteListNames, selectedFieldsRCA, expandFieldsRCA } from '../common/Constants';
 import IRCARepository from '../repositories/repositoryInterface/IRCARepository';
 import '@pnp/sp/webs';
 import '@pnp/sp/lists';
@@ -54,9 +54,9 @@ export class RCARepository implements IRCARepository {
             const items = await this.service.fetchAllItems<any>({
                 context,
                 listTitle: SubSiteListNames.RootCauseAnalysis,
-                select: selectedFields,
+                select: selectedFieldsRCA,
                 pageSize: 2000,
-                expand: expandFields
+                expand: expandFieldsRCA
                 //filter: 'IsActive eq 1 and ProjectType/Title eq \'' + (selectedProjectType) + '\'',
                 // filter: 'IsActive eq true and ProjectType in (' + (selectedProjectTypes?.map(pt => `'${pt}'`).join(',') || '') + ')',
 
@@ -256,8 +256,8 @@ export class RCARepository implements IRCARepository {
                 context,
                 listTitle: SubSiteListNames.RootCauseAnalysis,
                 item: payload,
-                select: selectedFields,
-                expand: expandFields
+                select: selectedFieldsRCA,
+                expand: expandFieldsRCA
             });
             this.refresh();
 
@@ -399,8 +399,8 @@ export class RCARepository implements IRCARepository {
                 listTitle: SubSiteListNames.RootCauseAnalysis,
                 itemId: itemId,
                 item: payload,
-                select: selectedFields,
-                expand: expandFields
+                select: selectedFieldsRCA,
+                expand: expandFieldsRCA
             });
         }
         catch (error: any) {

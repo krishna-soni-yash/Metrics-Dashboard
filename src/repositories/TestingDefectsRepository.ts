@@ -70,15 +70,15 @@ export class TestingDefectsRepository implements ITestingDefectsRepository {
 
             const normalized = (items || []).map((it: any) => ({
                 Requirement: it?.Title,
-                TestScenarioID: it?.Test_x0020_Scenario_x0020_ID,
+                //TestScenarioID: it?.Test_x0020_Scenario_x0020_ID,
                 TestCaseID: it?.Test_x0020_Case_x0020_ID,
                 DefectDescription: it?.Defect_x0020_Description,
                 TestingType: it?.Testing_x0020_Type,
                 DefectDetectedOn: it?.Defect_x0020_detected_x0020_on,
                 DefectDetectedBy: it?.Defect_x0020_Detected_x0020_by.EMail,
                 DefectStatus: it?.Defect_x0020_Status,
-                DefectType: it?.Defect_x0020_Type,
-                DefectClassification: it?.Defect_x0020_Classification,
+               // DefectType: it?.Defect_x0020_Type,
+               // DefectClassification: it?.Defect_x0020_Classification,
                 DefectOriginPhase: it?.Defect_x0020_Origin_x0020_Phase,
                 DefectDetectedPhase: it?.Defect_x0020_Detected_x0020_Phas,
                 Severity: it?.Severity,

@@ -54,7 +54,7 @@ import { set } from '@microsoft/sp-lodash-subset/lib/index';
 import IFacilitationReportRepository from '../../../../repositories/repositoryInterface/IFacilitationReportInterface';
 import { FacilitationReportRepository, getFacilitationValues } from '../../../../repositories/FacilitationReportRepository';
 import IRCARepository from '../../../../repositories/repositoryInterface/IRCARepository';
-import  { getRCAItems } from '../../../../repositories/RCARepository';
+import { getRCAItems } from '../../../../repositories/RCARepository';
 import { RCARepository } from '../../../../repositories/RCARepository';
 //import { IMetrics } from '../../../../Models/IMetrics';
 
@@ -72,10 +72,40 @@ export interface MonthlyData {
 
 }
 
+const projectTypeLookup: Record<string, string> = {
+    devm: 'DevM',
+    dev: 'Dev',
+    agile: 'Agile',
+    ams: 'AMS'
+};
+
+const normalizeProjectType = (projectType?: string | null): string | undefined => {
+    const raw = (projectType ?? '').trim();
+    if (!raw) {
+        return undefined;
+    }
+
+    const canonical = projectTypeLookup[raw.toLowerCase()];
+    if (canonical) {
+        return canonical;
+    }
+
+    if (raw.toLowerCase() === 'all') {
+        return undefined;
+    }
+
+    return raw;
+};
+
 
 export default function Dashboard({ context }: DashboardProps): JSX.Element {
     // Filters state
-    const [selectedProjectType, setSelectedProjectType] = useState<string | undefined>('Dev');
+    const [projectTypeSelection, setProjectTypeSelection] = React.useState<{ key?: string; canonical?: string }>(() => ({
+        key: 'devm',
+        canonical: normalizeProjectType('devm')
+    }));
+    const [selectedProjectType, setSelectedProjectType] = React.useState('devm');
+    const normalizedProjectType = projectTypeSelection.canonical;
     const [selectedMonth, setselectedMonth] = useState<string | undefined>(new Date().getMonth().toString());
     //const [metric, setMetric] = useState<string | undefined>('Velocity');
     //const [startDate, setStartDate] = useState<Date | undefined>(undefined);
@@ -101,20 +131,20 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
     //const [ScheduleVariation, setScheduleVariation] = React.useState<any[]>([]);
     const [CSITrendData, setCSITrendData] = React.useState<any[]>([]);
 
-    const [MeanEffortVariation, setMeanEffortVariation] = React.useState<Number>();
-    const [MeanSV, setMeanSV] = React.useState<Number>();
-    const [MeanOverallProductivity, setMeanOverallProductivity] = React.useState<Number>();
-    const [StandardDeviationOfEV, setStandardDeviationOfEV] = React.useState<Number>();
-    const [StandardDeviationSV, setStandardDeviationOfSV] = React.useState<Number>();
-    const [EffortDistributionData, setEffortDistributionData] = React.useState<any[]>();
-    const [efforVatiationChartData, setefforVatiationChartData] = React.useState<any[]>();
-    const [scheduledVatiationChartData, setscheduledVatiationChartData] = React.useState<any[]>();
-    const [OverAllProductivitySize, setOverAllProductivitySize] = React.useState<any[]>();
-    const [ActualEffortOverAllProductivity, setActualEffortOverAllProductivity] = React.useState<any[]>();
-    const [OverallProductivityChartData, setOverallProductivityChartData] = React.useState<any[]>();
+    const [MeanEffortVariation, setMeanEffortVariation] = React.useState<number>(0);
+    const [MeanSV, setMeanSV] = React.useState<number>(0);
+    const [MeanOverallProductivity, setMeanOverallProductivity] = React.useState<number>(0);
+    const [StandardDeviationOfEV, setStandardDeviationOfEV] = React.useState<number>(0);
+    const [StandardDeviationSV, setStandardDeviationOfSV] = React.useState<number>(0);
+    const [EffortDistributionData, setEffortDistributionData] = React.useState<any[]>([]);
+    const [efforVatiationChartData, setefforVatiationChartData] = React.useState<any[]>([]);
+    const [scheduledVatiationChartData, setscheduledVatiationChartData] = React.useState<any[]>([]);
+    const [OverAllProductivitySize, setOverAllProductivitySize] = React.useState<any[]>([]);
+    const [ActualEffortOverAllProductivity, setActualEffortOverAllProductivity] = React.useState<any[]>([]);
+    const [OverallProductivityChartData, setOverallProductivityChartData] = React.useState<any[]>([]);
     const [defectCount, setDefectCount] = React.useState<number>(0);
     const [codeReviewDefectCount, setCodeReviewDefectCount] = React.useState<number>(0);
-    const [PPOApproversData, setPPOApproversData] = React.useState<any[]>();
+    const [PPOApproversData, setPPOApproversData] = React.useState<any[]>([]);
     const [AMSEffortLogData, setAMSEffortLogData] = React.useState<IAMSEffortLog[]>([]);
     const [resourceUtilization, setResourceUtilization] = React.useState<number>(0);
     const [ResourceUtilizationTrendChartData, setResourceUtilizationTrendChartData] = React.useState<any[]>([]);
@@ -125,7 +155,7 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
     const [facilitationReportData, setFacilitationReportData] = React.useState<any[]>([]);
     const [facilitationReportDataForChart, setFacilitationReportDataForChart] = React.useState<any[]>([]);
     const [agingFindingsData, setagingFindingsData] = React.useState<any[]>([]);
-    const [pciChartData,setpciChartData] = React.useState<any[]>([]);
+    const [pciChartData, setpciChartData] = React.useState<any[]>([]);
     const [RCAItems, setRCAItems] = React.useState<any[]>([]);
     // new KPI counts
     // const [openRootCauseCount, setOpenRootCauseCount] = React.useState<number>(0);
@@ -148,6 +178,23 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
     //     setOpenIssuesCount(facilitationReportData.filter(f => norm(f?.Category) === 'issue' && isOpen(f)).length);
     //     setOpenActionItemsCount(facilitationReportData.filter(f => ['action item','action','actionitem'].indexOf(norm(f?.Category)) && isOpen(f)).length);
     // }, [facilitationReportData]);
+
+    const latestProjectTypeRef = React.useRef<string | undefined>(normalizedProjectType);
+
+    React.useEffect(() => {
+        latestProjectTypeRef.current = normalizedProjectType;
+    }, [normalizedProjectType]);
+
+    const handleProjectTypeChange = (option?: IDropdownOption) => {
+        const key = option?.key as string | undefined;
+        if (key) {
+            setSelectedProjectType(key);
+            // setProjectTypeSelection({ key: String(key), canonical: normalizeProjectType(String(key)) });
+        } else {
+            setSelectedProjectType('');
+            // setProjectTypeSelection({ key: '', canonical: undefined });
+        }
+    };
 
     // compute latest CSI value (from csiData) — pick common field names and latest by CSATAquiredDate (fallbacks)
     const latestCsiValue: { value: string; valueRaw: any }[] = (() => {
@@ -232,42 +279,84 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
                     return { id: m?.id, title, value, goal: goalLabel, status, pivotKey: m?.pivotKey };
                 }
 
+                if (selectedProjectType?.toLocaleLowerCase() === 'devm') {
 
-                if (titleNormalized === 'effort variation' && MeanEffortVariation != null && StandardDeviationOfEV != null) {
-                    value = `<span style='color:#666;font-size:12px'>Mean:</span>${MeanEffortVariation}<br/><span style='color:#666;font-size:12px'>Std Dev:</span>${StandardDeviationOfEV}`;
-                    status = (MeanEffortVariation >= (m?.LSL ?? -Infinity) && MeanEffortVariation <= (m?.USL ?? Infinity)) ? 'green' : 'red';
-                    return { id: m?.id, title, value, goal: goalLabel, status, pivotKey: m?.pivotKey };
+                    if (titleNormalized === 'effort variation_month' && MeanEffortVariation != null && StandardDeviationOfEV != null) {
+                        value = `<span style='color:#666;font-size:12px'>Mean:</span>${MeanEffortVariation}<br/><span style='color:#666;font-size:12px'>Std Dev:</span>${StandardDeviationOfEV}`;
+                        status = (MeanEffortVariation >= (m?.LSL ?? -Infinity) && MeanEffortVariation <= (m?.USL ?? Infinity)) ? 'green' : 'red';
+                        return { id: m?.id, title, value, goal: goalLabel, status, pivotKey: m?.pivotKey };
+                    }
+
+
+                    if (titleNormalized === 'schedule variation_month' && MeanSV != null && StandardDeviationSV != null) {
+                        value = `<span style='color:#666;font-size:12px'>Mean:</span>${MeanSV}<br/><span style='color:#666;font-size:12px'>Std Dev:</span>${StandardDeviationSV}`;
+                        status = (MeanSV >= (m?.LSL ?? -Infinity) && MeanSV <= (m?.USL ?? Infinity)) ? 'green' : 'red';
+                        return { id: m?.id, title, value, goal: goalLabel, status, pivotKey: m?.pivotKey };
+                    }
+
+                    if (titleNormalized === 'overall productivity_month' && MeanOverallProductivity != null && OverAllProductivitySize != null && ActualEffortOverAllProductivity != null) {
+                        value = `<span style='color:#666;font-size:12px'>Effort:</span>${ActualEffortOverAllProductivity}<br/><span style='color:#666;font-size:12px'>Size:</span>${OverAllProductivitySize}`;
+                        status = (MeanOverallProductivity >= (m?.LSL ?? -Infinity) && MeanOverallProductivity <= (m?.USL ?? Infinity)) ? 'green' : 'red';
+                        return { id: m?.id, title, value, goal: goalLabel, status, pivotKey: m?.pivotKey };
+                    }
+
+
+                    if (titleNormalized === 'delivered defect density_month' || titleNormalized === 'delivered defect density (post production)') {
+                        const cnt = defectCount || 0;
+                        value = `<span style='color:#666;font-size:12px'>Defects Count:</span>${cnt}`;
+                        status = (cnt >= (m?.LSL ?? -Infinity) && cnt <= (m?.USL ?? Infinity)) ? 'green' : 'red';
+
+                        return { id: m?.id, title: 'Post Delivery Defects', value, goal: goalLabel, status, pivotKey: m?.pivotKey };
+                    }
+
+
+                    if (titleNormalized === 'defect density_month' || titleNormalized === 'defect_density' || titleNormalized === 'internal defect density') {
+                        const cnt = codeReviewDefectCount || 0;
+                        value = `<span style='color:#666;font-size:12px'>Defects Count:</span>${cnt}`;
+                        status = (cnt >= (m?.LSL ?? -Infinity) && cnt <= (m?.USL ?? Infinity)) ? 'green' : 'red';
+                        return { id: m?.id, title: 'Internal Defects', value, goal: goalLabel, status, pivotKey: m?.pivotKey };
+                    }
+                }
+                if (selectedProjectType?.toLocaleLowerCase() === 'dev') {
+                    if (titleNormalized === 'effort variation' && MeanEffortVariation != null && StandardDeviationOfEV != null) {
+                        value = `<span style='color:#666;font-size:12px'>Mean:</span>${MeanEffortVariation}<br/><span style='color:#666;font-size:12px'>Std Dev:</span>${StandardDeviationOfEV}`;
+                        status = (MeanEffortVariation >= (m?.LSL ?? -Infinity) && MeanEffortVariation <= (m?.USL ?? Infinity)) ? 'green' : 'red';
+                        return { id: m?.id, title, value, goal: goalLabel, status, pivotKey: m?.pivotKey };
+                    }
+
+
+                    if (titleNormalized === 'schedule variation' && MeanSV != null && StandardDeviationSV != null) {
+                        value = `<span style='color:#666;font-size:12px'>Mean:</span>${MeanSV}<br/><span style='color:#666;font-size:12px'>Std Dev:</span>${StandardDeviationSV}`;
+                        status = (MeanSV >= (m?.LSL ?? -Infinity) && MeanSV <= (m?.USL ?? Infinity)) ? 'green' : 'red';
+                        return { id: m?.id, title, value, goal: goalLabel, status, pivotKey: m?.pivotKey };
+                    }
+
+                    if (titleNormalized === 'overall productivity' && MeanOverallProductivity != null && OverAllProductivitySize != null && ActualEffortOverAllProductivity != null) {
+                        value = `<span style='color:#666;font-size:12px'>Effort:</span>${ActualEffortOverAllProductivity}<br/><span style='color:#666;font-size:12px'>Size:</span>${OverAllProductivitySize}`;
+                        status = (MeanOverallProductivity >= (m?.LSL ?? -Infinity) && MeanOverallProductivity <= (m?.USL ?? Infinity)) ? 'green' : 'red';
+                        return { id: m?.id, title, value, goal: goalLabel, status, pivotKey: m?.pivotKey };
+                    }
+
+
+                    if (titleNormalized === 'delivered defect density' || titleNormalized === 'delivered defect density (post production)') {
+                        const cnt = defectCount || 0;
+                        value = `<span style='color:#666;font-size:12px'>Defects Count:</span>${cnt}`;
+                        status = (cnt >= (m?.LSL ?? -Infinity) && cnt <= (m?.USL ?? Infinity)) ? 'green' : 'red';
+
+                        return { id: m?.id, title: 'Post Delivery Defects', value, goal: goalLabel, status, pivotKey: m?.pivotKey };
+                    }
+
+
+                    if (titleNormalized === 'defect density' || titleNormalized === 'defect_density' || titleNormalized === 'internal defect density') {
+                        const cnt = codeReviewDefectCount || 0;
+                        value = `<span style='color:#666;font-size:12px'>Defects Count:</span>${cnt}`;
+                        status = (cnt >= (m?.LSL ?? -Infinity) && cnt <= (m?.USL ?? Infinity)) ? 'green' : 'red';
+                        return { id: m?.id, title: 'Internal Defects', value, goal: goalLabel, status, pivotKey: m?.pivotKey };
+                    }
                 }
 
 
-                if (titleNormalized === 'schedule variation' && MeanSV != null && StandardDeviationSV != null) {
-                    value = `<span style='color:#666;font-size:12px'>Mean:</span>${MeanSV}<br/><span style='color:#666;font-size:12px'>Std Dev:</span>${StandardDeviationSV}`;
-                    status = (MeanSV >= (m?.LSL ?? -Infinity) && MeanSV <= (m?.USL ?? Infinity)) ? 'green' : 'red';
-                    return { id: m?.id, title, value, goal: goalLabel, status, pivotKey: m?.pivotKey };
-                }
 
-                if (titleNormalized === 'overall productivity' && MeanOverallProductivity != null && OverAllProductivitySize != null && ActualEffortOverAllProductivity != null) {
-                    value = `<span style='color:#666;font-size:12px'>Effort:</span>${ActualEffortOverAllProductivity}<br/><span style='color:#666;font-size:12px'>Size:</span>${OverAllProductivitySize}`;
-                    status = (MeanOverallProductivity >= (m?.LSL ?? -Infinity) && MeanOverallProductivity <= (m?.USL ?? Infinity)) ? 'green' : 'red';
-                    return { id: m?.id, title, value, goal: goalLabel, status, pivotKey: m?.pivotKey };
-                }
-
-
-                if (titleNormalized === 'delivered defect density' || titleNormalized === 'delivered defect density (post production)') {
-                    const cnt = defectCount || 0;
-                    value = `<span style='color:#666;font-size:12px'>Defects Count:</span>${cnt}`;
-                    status = (cnt >= (m?.LSL ?? -Infinity) && cnt <= (m?.USL ?? Infinity)) ? 'green' : 'red';
-
-                    return { id: m?.id, title: 'Post Delivery Defects', value, goal: goalLabel, status, pivotKey: m?.pivotKey };
-                }
-
-
-                if (titleNormalized === 'defect density' || titleNormalized === 'defect_density' || titleNormalized === 'internal defect density') {
-                    const cnt = codeReviewDefectCount || 0;
-                    value = `<span style='color:#666;font-size:12px'>Defects Count:</span>${cnt}`;
-                    status = (cnt >= (m?.LSL ?? -Infinity) && cnt <= (m?.USL ?? Infinity)) ? 'green' : 'red';
-                    return { id: m?.id, title: 'Internal Defects', value, goal: goalLabel, status, pivotKey: m?.pivotKey };
-                }
 
                 if (titleNormalized === 'resource utilization' || titleNormalized === 'resource_utilization') {
 
@@ -298,7 +387,15 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
             }
         });
     } else {
-        rawKpis = desiredOrder
+        // No metrics available — provide placeholder KPI objects so UI and CSV export still work
+        rawKpis = desiredOrder.map(name => ({
+            id: name,
+            title: name,
+            value: '0',
+            goal: '',
+            status: 'red',
+            pivotKey: ''
+        }));
     }
 
     // Reorder KPIs to the requested display priority (case-insensitive).
@@ -454,9 +551,10 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
 
     // Fluent options for dropdowns
     const ProjectType: IDropdownOption[] = [
-        { key: 'Dev', text: 'Dev' },
-        { key: 'Agile', text: 'Agile' },
-        { key: 'AMS', text: 'AMS' },
+        { key: 'devm', text: 'DevM' },
+        { key: 'dev', text: 'Dev' },
+        { key: 'agile', text: 'Agile' },
+        { key: 'ams', text: 'AMS' },
     ];
     const Months: IDropdownOption[] = [
         { key: '0', text: 'January' },
@@ -731,18 +829,19 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
         }
 
 
+        const safeData = Array.isArray(data) && data.length > 0 ? data : [['Category', 'Value'], ['No Data', 0]];
         return (
             <Chart
                 chartType={chartType}
                 width={width}
                 height={height}
-                data={data}
+                data={safeData}
                 options={options}
                 chartEvents={[
                     {
                         eventName: 'select',
                         callback: () => {
-                            handleChartSelect(chartKey, data, title);
+                            handleChartSelect(chartKey, safeData, title);
                             return true;
                         },
                     },
@@ -752,9 +851,9 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
     };
 
     React.useEffect(() => {
-        if (context) {
+        if (context && selectedProjectType) {
             loadMetricsData().catch(() => {
-                setMetricsData([]);
+                // setMetricsData([]);
             });
         }
     }, [context, selectedProjectType]); // reload metrics when project type changes
@@ -765,7 +864,7 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
             });
         }
         // console.log('Selected Project Type changed:', selectedProjectType);
-    }, [context]);
+    }, [context, selectedProjectType]);
     React.useEffect(() => {
         if (context) {
             loadManagementEffortLogData().catch(() => {
@@ -773,7 +872,7 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
             });
         }
         // console.log('Selected Project Type changed:', selectedProjectType);
-    }, [context]);
+    }, [context, selectedProjectType]);
     React.useEffect(() => {
         if (context) {
             loadManagementTaskLogData().catch(() => {
@@ -781,7 +880,7 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
             });
         }
         // console.log('Selected Project Type changed:', selectedProjectType);
-    }, [context]);
+    }, [context, selectedProjectType]);
     React.useEffect(() => {
         if (context) {
             loadTaskManagementData().catch(() => {
@@ -789,14 +888,31 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
             });
         }
         // console.log('Selected Project Type changed:', selectedProjectType);
-    }, [context]);
+    }, [context, selectedProjectType]);
 
     React.useEffect(() => {
         if (context) {
             loadRAIDLogData().catch(() => { });
         }
         // console.log('Selected Project Type changed:', selectedProjectType);
-    }, [context]);
+    }, [context, selectedProjectType]);
+
+    // Immediately clear dependent datasets when project type changes so async loaders
+    // don't mix previous-selection data with new-selection data during fetch.
+    React.useEffect(() => {
+        setMetricsData([]);
+        setWorkLogData([]);
+        setTaskManagementData([]);
+        setManagementEffortLogData([]);
+        setManagementTaskLogData([]);
+        setCsiData([]);
+        setRAIDdata([]);
+        setDefectsData([]);
+        setCodeReviewDefectsData([]);
+        setAMSEffortLogData([]);
+        setPPOApproversData([]);
+        setFilteredWorkLogData([]);
+    }, [selectedProjectType]);
 
     const loadRAIDLogData = async () => {
         if (!context) return;
@@ -809,7 +925,6 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
 
             // adjust call signature as needed by your repository — passing project type too
             const results = await getRiskValues(false, context);
-            // optional: dedupe/sort depending on repo shape — store as-is
             setRAIDdata(results || []);
             console.log('RAID data loaded', RAIDdata);
         }
@@ -828,11 +943,11 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
     const RiskChartDatafun = () => {
         if (RAIDdata.length > 0) {
             //filter risk where RE >=80
-            const REGEQ80 = RAIDdata.filter(i => i?.RiskExposure >= 80 && i?.SelectType =='Risk').length
+            const REGEQ80 = RAIDdata.filter(i => i?.RiskExposure >= 80 && i?.SelectType == 'Risk').length
             //filter risk where RE >=60 and RE < 80
-            const REGEQ60 = RAIDdata.filter(i => i?.RiskExposure >= 60 && i?.RiskExposure < 80&& i?.SelectType =='Risk').length
+            const REGEQ60 = RAIDdata.filter(i => i?.RiskExposure >= 60 && i?.RiskExposure < 80 && i?.SelectType == 'Risk').length
             //filter risk where RE >= 0 and RE < 60
-            const REGEQ0 = RAIDdata.filter(i => i?.RiskExposure >= 0 && i?.RiskExposure < 60 && i?.SelectType =='Risk').length
+            const REGEQ0 = RAIDdata.filter(i => i?.RiskExposure >= 0 && i?.RiskExposure < 60 && i?.SelectType == 'Risk').length
             const riskChartData = [['Risk Exposure', 'Count', { role: 'annotation', type: 'string' }],
             ['RE >=80', REGEQ80, REGEQ80],
             ['RE >=60 and RE < 80', REGEQ60, REGEQ60],
@@ -862,7 +977,6 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
 
             // adjust call signature as needed by your repository — passing project type too
             const results = await getCSIValues(false, context);
-            // optional: dedupe/sort depending on repo shape — store as-is
             setCsiData(results || []);
             console.log('CSI data loaded', csiData);
         } catch (err) {
@@ -871,34 +985,48 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
         }
     };
     const loadMetricsData = async () => {
-        const genericServiceInstance: IGenericService = new GenericService(undefined, context);
-        genericServiceInstance.init(undefined, context);
-        const MetricsMeasurementRepo: IProjectMetricsRepository = new MetricsRepository(genericServiceInstance);
-        MetricsMeasurementRepo.setService(genericServiceInstance);
+        if (!context) return;
+        try {
+            const genericServiceInstance: IGenericService = new GenericService(undefined, context);
+            genericServiceInstance.init(undefined, context);
+            const MetricsMeasurementRepo: IProjectMetricsRepository = new MetricsRepository(genericServiceInstance);
+            MetricsMeasurementRepo.setService(genericServiceInstance);
 
-        let MetricValues = await getMetricsFromProjectMetrics(false, context, '', selectedProjectType);
-        const mapped = MetricValues.map(m => ({
-            id: (m.Metrics || '').toString(),
-            title: (m.Metrics || '').toString(),
-            USL: m.USL,
-            LSL: m.LSL,
-            goal: m.Goal,
-            pivotKey: (m.Metrics || '').toString()
-        }));
-        const firstIndexOfKey = (arr: { id?: any; title?: any }[], key: string): number => {
-            for (let i = 0; i < arr.length; i++) {
-                if (String(arr[i].id || arr[i].title || '').trim() === key) return i;
-            }
-            return -1;
-        };
+            console.log('loadMetricsData: fetching metrics for projectType=', selectedProjectType);
+            let MetricValues: any[] = await getMetricsFromProjectMetrics(false, context, '', selectedProjectType);
 
-        const unique = mapped.filter((item, index, array) => {
-            const key = String(item.id || item.title || '').trim();
-            return key !== '' && firstIndexOfKey(array, key) === index;
-        });
-        setMetricsData(unique);
+            // if (!Array.isArray(MetricValues) || MetricValues.length === 0) {
+            //     console.warn('loadMetricsData: no metrics returned for projectType, retrying without projectType');
+            //     MetricValues = await getMetricsFromProjectMetrics(false, context, '', undefined as any);
+            // }
+
+            const mapped = (MetricValues || []).map(m => ({
+                id: (m.Metrics || '').toString(),
+                title: (m.Metrics || '').toString(),
+                USL: m.USL,
+                LSL: m.LSL,
+                goal: m.Goal,
+                pivotKey: (m.Metrics || '').toString()
+            }));
+            const firstIndexOfKey = (arr: { id?: any; title?: any }[], key: string): number => {
+                for (let i = 0; i < arr.length; i++) {
+                    if (String(arr[i].id || arr[i].title || '').trim() === key) return i;
+                }
+                return -1;
+            };
+            const unique = mapped.filter((item, index, array) => {
+                const key = String(item.id || item.title || '').trim();
+                return key !== '' && firstIndexOfKey(array, key) === index;
+            });
+            setMetricsData(unique);
+            console.log('loadMetricsData: metrics loaded count=', unique.length);
+        } catch (err) {
+            console.error('loadMetricsData failed', err);
+            setMetricsData([]);
+        }
     };
     const loadWorkLogManagementData = async () => {
+        if (!context) return;
         const genericServiceInstance: IGenericService = new GenericService(undefined, context);
         genericServiceInstance.init(undefined, context);
         const WorklogManagmentRepo: IWorklogManagmentRepository = new WorklogManagmentRepository(genericServiceInstance);
@@ -938,6 +1066,7 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
     };
     const loadManagementEffortLogData = async () => {
         // Implementation for loading Management Effort Log Data
+        if (!context) return;
         const genericServiceInstance: IGenericService = new GenericService(undefined, context);
         genericServiceInstance.init(undefined, context);
         const WorklogManagmentRepo: IManagemnetEffortLogRepository = new ManagemnetEffortLogRepository(genericServiceInstance);
@@ -961,6 +1090,7 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
     };
     const loadManagementTaskLogData = async () => {
         // Implementation for loading Management Task Log Data
+        if (!context) return;
         const genericServiceInstance: IGenericService = new GenericService(undefined, context);
         genericServiceInstance.init(undefined, context);
         const WorklogManagmentRepo: ITaskManagementLogRepository = new TaskManagementLogRepository(genericServiceInstance);
@@ -988,6 +1118,7 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
     };
     const loadTaskManagementData = async () => {
         // Implementation for loading Management Task Log Data
+        if (!context) return;
         const genericServiceInstance: IGenericService = new GenericService(undefined, context);
         genericServiceInstance.init(undefined, context);
         const WorklogManagmentRepo: ITaskManagementRepository = new TaskManagementRepository(genericServiceInstance);
@@ -1050,541 +1181,571 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
 
     {/* -------------------------------- DEVM Dashboard Data calculations started ---------------------- */ }
     React.useEffect(() => {
-        // Run calculations only when all three data sets have been loaded (non-empty arrays)
-        if (
-            TaskManagementData && TaskManagementData.length > 0 &&
-            WorkLogData && WorkLogData.length > 0 &&
-            MetricsData && MetricsData.length > 0
-        ) {
-            {
+        // Run calculations on any data change; calculations handle empty arrays
 
-                // Create a quick lookup: closed tasks by WorkItemNo
-                //let closedTaskByWorkItem: any[] = [];
-                const closedWorkLogByWorkItem = WorkLogData.filter(wl =>
-                    wl?.Status === 'Completed' &&
-                    wl?.WorkItemNo != null
-                    //&& closedTaskByWorkItem.some(t => t.WorkItemNo === wl.WorkItemNo)
-                );
-                const closedTaskByWorkItem = TaskManagementData.filter(t => t?.TaskStatus === 'Completed'
-                    && t?.WorkItemNo != null && // && new Date(t.ActualEndDate).getMonth().toString() === selectedMonth 
-                    closedWorkLogByWorkItem.some(wl => wl.WorkItemNo === t.WorkItemNo));
-                console.log('Filtered CompletedTasks result:', closedTaskByWorkItem);
-                //calcuating Planned Duration
+        console.log('metricsData:', MetricsData);
+        if (WorkLogData.length > 0 && TaskManagementData.length > 0 && selectedProjectType && MetricsData.length > 0) {
+
+
+            // Create a quick lookup: closed tasks by WorkItemNo
+            //let closedTaskByWorkItem: any[] = [];
+            const closedWorkLogByWorkItem = WorkLogData.filter(wl =>
+                wl?.Status === 'Completed' && wl?.ProjectType?.toLocaleLowerCase() === selectedProjectType?.toLocaleLowerCase() &&
+                wl?.WorkItemNo != null
+                //&& closedTaskByWorkItem.some(t => t.WorkItemNo === wl.WorkItemNo)
+            );
+            const closedTaskByWorkItem = TaskManagementData.filter(t => t?.TaskStatus === 'Completed'
+                && t?.WorkItemNo != null && // && new Date(t.ActualEndDate).getMonth().toString() === selectedMonth 
+                closedWorkLogByWorkItem.some(wl => wl.WorkItemNo === t.WorkItemNo));
+            console.log('Filtered CompletedTasks result:', closedTaskByWorkItem);
+            //calcuating Planned Duration
 
 
 
-                // Precompute totals per WorkItemNo (in-scope, no helper functions)
-                const totalsByWorkItem = new Map<string, number>();
-                const latestEndDateByWorkItem = new Map<string, Date>(); // track latest end date
-                for (const t of closedTaskByWorkItem) {
-                    const key = String(t?.WorkItemNo ?? '').trim();
-                    if (key !== '') {
-                        const eff = Number(t?.ActualEffort) || 0;
-                        totalsByWorkItem.set(key, (totalsByWorkItem.get(key) ?? 0) + eff);
+            // Precompute totals per WorkItemNo (in-scope, no helper functions)
+            const totalsByWorkItem = new Map<string, number>();
+            const latestEndDateByWorkItem = new Map<string, Date>(); // track latest end date
+            for (const t of closedTaskByWorkItem) {
+                const key = String(t?.WorkItemNo ?? '').trim();
+                if (key !== '') {
+                    const eff = Number(t?.ActualEffort) || 0;
+                    totalsByWorkItem.set(key, (totalsByWorkItem.get(key) ?? 0) + eff);
 
-                        const rawEnd = t?.ActualEndDate; // could be string or Date
+                    const rawEnd = t?.ActualEndDate; // could be string or Date
 
-                        if (rawEnd != null && rawEnd !== '') {
-                            const end = rawEnd instanceof Date ? rawEnd : new Date(rawEnd);
-                            if (!isNaN(end.getTime())) {
-                                const prev = latestEndDateByWorkItem.get(key);
-                                if (!prev || end > prev) {
-                                    latestEndDateByWorkItem.set(key, end);
-                                }
+                    if (rawEnd != null && rawEnd !== '') {
+                        const end = rawEnd instanceof Date ? rawEnd : new Date(rawEnd);
+                        if (!isNaN(end.getTime())) {
+                            const prev = latestEndDateByWorkItem.get(key);
+                            if (!prev || end > prev) {
+                                latestEndDateByWorkItem.set(key, end);
                             }
                         }
-
                     }
+
                 }
-                console.log('Totals by WorkItemNo:', totalsByWorkItem);
+            }
+            console.log('Totals by WorkItemNo:', totalsByWorkItem);
 
-                //Calcuting the Actual Efforts of the tasks based on the work items
-                const WorkItemActualEffort: any[] = [];
-                const seen = new Set<string>();
-                closedTaskByWorkItem.forEach(task => {
-                    const hasWorkItemNo =
-                        task?.WorkItemNo != null &&
-                        task?.WorkItemNo !== undefined &&
-                        String(task.WorkItemNo).trim() !== '';
+            //Calcuting the Actual Efforts of the tasks based on the work items
+            const WorkItemActualEffort: any[] = [];
+            const seen = new Set<string>();
+            closedTaskByWorkItem.forEach(task => {
+                const hasWorkItemNo =
+                    task?.WorkItemNo != null &&
+                    task?.WorkItemNo !== undefined &&
+                    String(task.WorkItemNo).trim() !== '';
 
-                    if (hasWorkItemNo) {
-                        const key = String(task.WorkItemNo).trim();
-                        const totalActualEffort = totalsByWorkItem.get(key) ?? 0;
-                        const ActualEndDate = latestEndDateByWorkItem.get(key) ?? '';
-                        // skip if the work item is seen
-                        if (seen.has(key)) return;
-                        WorkItemActualEffort.push({ WorkItemNo: task.WorkItemNo, ActualEffort: totalActualEffort, ActualEndDate: ActualEndDate });
-                        // task.ActualEffort = totalActualEffort;
-                        seen.add(key);
-                        console.log(`Updated ActualEffort for WorkItemNo ${task.WorkItemNo}:`, totalActualEffort);
-                    } else {
-                        task.ActualEffort = task.ActualEffort; // keep original
-                    }
+                if (hasWorkItemNo) {
+                    const key = String(task.WorkItemNo).trim();
+                    const totalActualEffort = totalsByWorkItem.get(key) ?? 0;
+                    const ActualEndDate = latestEndDateByWorkItem.get(key) ?? '';
+                    // skip if the work item is seen
+                    if (seen.has(key)) return;
+                    WorkItemActualEffort.push({ WorkItemNo: task.WorkItemNo, ActualEffort: totalActualEffort, ActualEndDate: ActualEndDate });
+                    // task.ActualEffort = totalActualEffort;
+                    seen.add(key);
+                    console.log(`Updated ActualEffort for WorkItemNo ${task.WorkItemNo}:`, totalActualEffort);
+                } else {
+                    task.ActualEffort = task.ActualEffort; // keep original
+                }
 
-                });
+            });
 
-                // get the planned effort from workLog Data
-                const WorkLogItemWithPlannedandActualEfforts: any[] = []
-                let EffortVariation = 0.0;
-                let meanEffortVariation = 0.0;
-                let meanSV = 0.0;
-                let diffDaysSV = 0;
-                let PlannedDuration = 0;
-                let overAllProductivity = 0.0;
+            // get the planned effort from workLog Data
+            const WorkLogItemWithPlannedandActualEfforts: any[] = []
+            let EffortVariation = 0.0;
+            let meanEffortVariation = 0.0;
+            let meanSV = 0.0;
+            let diffDaysSV = 0;
+            let PlannedDuration = 0;
+            let overAllProductivity = 0.0;
 
-                closedWorkLogByWorkItem.forEach(worklog => {
-                    if (!worklog?.WorkItemNo) {
-                        return;
-                    }
-                    WorkItemActualEffort.filter(item => item.WorkItemNo === worklog.WorkItemNo).forEach(
-                        i => {
-                            EffortVariation = Math.round((i.ActualEffort - worklog.ActualPlannedEffort) * 100 / worklog.ActualPlannedEffort);
+            closedWorkLogByWorkItem.forEach(worklog => {
+                if (!worklog?.WorkItemNo) {
+                    return;
+                }
+                WorkItemActualEffort.filter(item => item.WorkItemNo === worklog.WorkItemNo).forEach(
+                    i => {
+                        EffortVariation = Math.round((i.ActualEffort - worklog.ActualPlannedEffort) * 100 / worklog.ActualPlannedEffort);
 
-                            const actualEndDate = normalizeToLocalDateOnly(i.ActualEndDate);
-                            const plannedEndDate = normalizeToLocalDateOnly(worklog.PlannedEndDate);
-                            const PlannedStartDate = normalizeToLocalDateOnly(worklog.PlannedStartDate);
-
-
-                            if (actualEndDate && plannedEndDate) {
-                                const diffMs = actualEndDate.getTime() - plannedEndDate.getTime();
-                                diffDaysSV = Math.round((diffMs / (1000 * 60 * 60 * 24)) * 100) / 100; // 2 decimals
-                                console.log('Days difference:', diffDaysSV);
-                            }
-
-                            if (plannedEndDate && PlannedStartDate) {
-                                const diffMs = plannedEndDate.getTime() - PlannedStartDate.getTime();
-                                PlannedDuration = (Math.round((diffMs / (1000 * 60 * 60 * 24)) * 100) / 100) + 1; // 2 decimals
-                                console.log('Days difference:', diffDaysSV);
-                            }
+                        const actualEndDate = normalizeToLocalDateOnly(i.ActualEndDate);
+                        const plannedEndDate = normalizeToLocalDateOnly(worklog.PlannedEndDate);
+                        const PlannedStartDate = normalizeToLocalDateOnly(worklog.PlannedStartDate);
 
 
-
-                            //const PlannedDuration = (new Date(worklog.PlannedEndDate).getTime() - new Date(worklog.PlannedStartDate).getTime()) + 1
-                            const ScheduledVariation = diffDaysSV * 100 / PlannedDuration
-                            overAllProductivity = i.ActualEffort / worklog.AdjustedComplexityPoint
-                            WorkLogItemWithPlannedandActualEfforts.push({
-                                ...i, PlannedEffort: worklog.ActualPlannedEffort,
-                                EffortVariation: EffortVariation,
-                                PlannedEndDate: worklog.PlannedEndDate.toLocaleString(),
-                                PlannedStartDate: worklog.PlannedStartDate.toLocaleString(),
-                                PlannedDuration: PlannedDuration,
-                                ScheduledVariation: ScheduledVariation,
-                                size: worklog.AdjustedComplexityPoint,
-                                OverAllProductivity: overAllProductivity
-                            });
-                            console.log(`Updated PlannedEffort for WorkItemNo `, WorkLogItemWithPlannedandActualEfforts);
-                        }
-                    );
-
-                });
-
-
-                const groupedByMonth: { [key: string]: MonthlyData } = {};
-                WorkLogItemWithPlannedandActualEfforts.forEach(item => {
-                    const actualEndDate = normalizeToLocalDateOnly(item.ActualEndDate);
-                    if (actualEndDate) {
-                        const monthKey = `${actualEndDate.getFullYear()}-${actualEndDate.getMonth() + 1}`;
-                        //Adding the Actual Effort for the work items whose Actual End Date is in the same month from WorkLogItemWithPlannedandActualEfforts;
-                        if (!groupedByMonth[monthKey]) {
-                            groupedByMonth[monthKey] = {
-                                ActualEffort: 0,
-                                PlannedEffort: 0,
-                                size: 0,
-                                plannedDuration: 0,
-                                codeReviewDefects: 0,
-
-                            };
+                        if (actualEndDate && plannedEndDate) {
+                            const diffMs = actualEndDate.getTime() - plannedEndDate.getTime();
+                            diffDaysSV = Math.round((diffMs / (1000 * 60 * 60 * 24)) * 100) / 100; // 2 decimals
+                            console.log('Days difference:', diffDaysSV);
                         }
 
-                        groupedByMonth[monthKey].ActualEffort += Number(item.ActualEffort) || 0;
-                        groupedByMonth[monthKey].PlannedEffort += Number(item.PlannedEffort) || 0;
-                        groupedByMonth[monthKey].size += Number(item.size) || 0;
-                        groupedByMonth[monthKey].plannedDuration += Number(item.PlannedDuration) || 0;
-                        // groupedByMonth[monthKey].codeReviewDefects += CodeReviewDefectsData.filter(crD => {
-                        //     const defectDate = normalizeToLocalDateOnly(crD.IdentifiedDate);
-                        //     return defectDate && defectDate.getFullYear() === actualEndDate.getFullYear() && defectDate.getMonth() === actualEndDate.getMonth();
-                        // }).length;
+                        if (plannedEndDate && PlannedStartDate) {
+                            const diffMs = plannedEndDate.getTime() - PlannedStartDate.getTime();
+                            PlannedDuration = (Math.round((diffMs / (1000 * 60 * 60 * 24)) * 100) / 100) + 1; // 2 decimals
+                            console.log('Days difference:', diffDaysSV);
+                        }
+
+
+
+                        //const PlannedDuration = (new Date(worklog.PlannedEndDate).getTime() - new Date(worklog.PlannedStartDate).getTime()) + 1
+                        const ScheduledVariation = diffDaysSV * 100 / PlannedDuration
+                        overAllProductivity = i.ActualEffort / worklog.AdjustedComplexityPoint
+                        WorkLogItemWithPlannedandActualEfforts.push({
+                            ...i, PlannedEffort: worklog.ActualPlannedEffort,
+                            EffortVariation: EffortVariation,
+                            PlannedEndDate: worklog.PlannedEndDate.toLocaleString(),
+                            PlannedStartDate: worklog.PlannedStartDate.toLocaleString(),
+                            PlannedDuration: PlannedDuration,
+                            ScheduledVariation: ScheduledVariation,
+                            size: worklog.AdjustedComplexityPoint,
+                            OverAllProductivity: overAllProductivity
+                        });
+                        console.log(`Updated PlannedEffort for WorkItemNo `, WorkLogItemWithPlannedandActualEfforts);
+                    }
+                );
+
+            });
+
+
+            const groupedByMonth: { [key: string]: MonthlyData } = {};
+            WorkLogItemWithPlannedandActualEfforts.forEach(item => {
+                const actualEndDate = normalizeToLocalDateOnly(item.ActualEndDate);
+                if (actualEndDate) {
+                    const monthKey = `${actualEndDate.getFullYear()}-${actualEndDate.getMonth() + 1}`;
+                    //Adding the Actual Effort for the work items whose Actual End Date is in the same month from WorkLogItemWithPlannedandActualEfforts;
+                    if (!groupedByMonth[monthKey]) {
+                        groupedByMonth[monthKey] = {
+                            ActualEffort: 0,
+                            PlannedEffort: 0,
+                            size: 0,
+                            plannedDuration: 0,
+                            codeReviewDefects: 0,
+
+                        };
+                    }
+
+                    groupedByMonth[monthKey].ActualEffort += Number(item.ActualEffort) || 0;
+                    groupedByMonth[monthKey].PlannedEffort += Number(item.PlannedEffort) || 0;
+                    groupedByMonth[monthKey].size += Number(item.size) || 0;
+                    groupedByMonth[monthKey].plannedDuration += Number(item.PlannedDuration) || 0;
+                    // groupedByMonth[monthKey].codeReviewDefects += CodeReviewDefectsData.filter(crD => {
+                    //     const defectDate = normalizeToLocalDateOnly(crD.IdentifiedDate);
+                    //     return defectDate && defectDate.getFullYear() === actualEndDate.getFullYear() && defectDate.getMonth() === actualEndDate.getMonth();
+                    // }).length;
+                }
+            });
+           
+
+            // let sumOfEV = 0.0
+            let standardDeviationEV = 0.0;
+            let standardDeviationSV = 0.0;
+            let meanOverallProductivity = 0.0;
+
+
+            // Calculating Mean and Standard Deviation for Effort Variation, Scheduled Variation and Overall Productivity
+            const filteredForMonth = WorkLogItemWithPlannedandActualEfforts.filter(i => {
+                try {
+                    const d = i && i.ActualEndDate ? new Date(i.ActualEndDate) : null;
+                    return d && d.getMonth().toString() === selectedMonth;
+                } catch (e) {
+                    return false;
+                }
+            });
+            const n = filteredForMonth.length;
+            if (n > 0) {
+                meanEffortVariation = filteredForMonth.reduce((sum, x) => sum + (Number(x.EffortVariation) || 0), 0) / n;
+                meanSV = filteredForMonth.reduce((sum, x) => sum + (Number(x.ScheduledVariation) || 0), 0) / n;
+                meanOverallProductivity = filteredForMonth.reduce((sum, x) => sum + (Number(x.OverAllProductivity) || 0), 0) / n;
+                const varianceEV = filteredForMonth.reduce((acc, x) => acc + ((Number(x.EffortVariation) || 0) - meanEffortVariation) ** 2, 0) / n;
+                const varianceSV = filteredForMonth.reduce((acc, x) => acc + ((Number(x.ScheduledVariation) || 0) - meanSV) ** 2, 0) / n;
+                standardDeviationEV = parseFloat(Math.sqrt(varianceEV).toFixed(2));
+                standardDeviationSV = parseFloat(Math.sqrt(varianceSV).toFixed(2));
+                setMeanEffortVariation(parseFloat(meanEffortVariation.toFixed(2)));
+                setMeanSV(parseFloat(meanSV.toFixed(2)));
+                setMeanOverallProductivity(parseFloat(meanOverallProductivity.toFixed(2)));
+                setStandardDeviationOfEV(standardDeviationEV);
+                setStandardDeviationOfSV(standardDeviationSV);
+            } else {
+                setMeanEffortVariation(0);
+                setMeanSV(0);
+                setMeanOverallProductivity(0);
+                setStandardDeviationOfEV(0);
+                setStandardDeviationOfSV(0);
+            }
+            const OAPSize = WorkLogItemWithPlannedandActualEfforts.filter(i => new Date(i.ActualEndDate).getMonth().toString() == selectedMonth).reduce((sum, x) => sum + x.size, 0);
+            const OAPEffort = WorkLogItemWithPlannedandActualEfforts.filter(i => new Date(i.ActualEndDate).getMonth().toString() == selectedMonth).reduce((sum, x) => sum + x.ActualEffort, 0);
+            setOverAllProductivitySize(OAPSize);
+            setActualEffortOverAllProductivity(OAPEffort);
+            const numofdefects = defectsData.filter(dD => dD.DefectDetectedPhase == 'Post Production' && new Date(dD.DefectDetectedOn).getMonth().toString() == selectedMonth).length
+            setDefectCount(numofdefects);
+            //Calculating the number of Code Review Defects for the selected month and for completed task in worklog managemnet;
+            let totalCodeReviewDefectsForSelectedMonth = 0;
+            WorkLogItemWithPlannedandActualEfforts.filter(wl => new Date(wl.ActualEndDate).getMonth().toString() == selectedMonth).forEach(wlItem => {
+                const codeReviewDefectsForWorkItem = CodeReviewDefectsData.filter(crD => crD.RequirementID == wlItem.WorkItemNo && new Date(crD.IdentifiedDate).getMonth().toString() == selectedMonth).length
+                totalCodeReviewDefectsForSelectedMonth += codeReviewDefectsForWorkItem;
+            });
+            setCodeReviewDefectCount(totalCodeReviewDefectsForSelectedMonth);
+
+
+            WorkLogItemWithPlannedandActualEfforts.filter(wl => new Date(wl.ActualEndDate).getMonth().toString() == selectedMonth).forEach(wlItem => {
+                const codeReviewDefectsForWorkItem = CodeReviewDefectsData.filter(crD => crD.RequirementID == wlItem.WorkItemNo && new Date(crD.IdentifiedDate).getMonth().toString() == selectedMonth).length
+                totalCodeReviewDefectsForSelectedMonth += codeReviewDefectsForWorkItem;
+            });
+            setCodeReviewDefectCount(totalCodeReviewDefectsForSelectedMonth);
+
+
+            // const variance = nums.reduce((acc, x) => acc + (x - mean) ** 2, 0) / n;
+            //return Math.sqrt(variance);
+
+            //Create a chart for Effort Distribution
+            let ManagementEffortLogDataFiltered = ManagementEffortLogData.filter(m => m?.ActualEndDate != null && new Date(m.ActualEndDate).getMonth().toString() === selectedMonth && m.Completion).reduce((sum, x) => sum + x.ActualEffortHrs, 0);
+            console.log('ManagementEffortLogDataFiltered:', ManagementEffortLogDataFiltered);
+            let effortDistributionData: any[] = []
+            effortDistributionData.push(['Task Type', 'Effort Hrs']);
+            effortDistributionData.push(['Management Efforts', ManagementEffortLogDataFiltered])
+            closedTaskByWorkItem.forEach(item => {
+                effortDistributionData.push([item.TaskType, item.ActualEffort])
+            });
+            setEffortDistributionData(effortDistributionData);
+
+            //Resource utilization for selected month
+            //let resourceUtilizationData = 0;
+            let TotalActualEffort = 0;
+            closedTaskByWorkItem.forEach(item => {
+                if (new Date(item.ActualStartDate).getMonth().toString() === selectedMonth) {
+                    TotalActualEffort += item.ActualEffort
+                }
+
+            });
+            ManagementEffortLogData.forEach(mE => {
+                if (new Date(mE.ActualStartDate).getMonth().toString() === selectedMonth) {
+                    TotalActualEffort += mE.ActualEffortHrs
+                }
+            });
+            AMSEffortLogData.forEach(aE => {
+                //console.log('aE.ActualStartDate:', aE.ActualStartDate);
+                if (new Date(aE.ActualStartDate).getMonth().toString() === selectedMonth) {
+                    TotalActualEffort += aE.ActualEfforts
+                }
+            });
+
+            //Calculating total working days in the selected month
+            let totalWorkingDaysInMonth = 19; //Assuming 8 hours per day for 24 working days
+
+            //const totalWorkingDaysInMonth = getWorkingDaysInMonth(new Date().getFullYear(), Number(selectedMonth));
+            const totalAvailableHours = totalWorkingDaysInMonth * 8;
+            let teamSize = 1;
+            if (PPOApproversData != undefined && PPOApproversData.length > 0) {
+                PPOApproversData.forEach(pA => {
+                    if (pA.SiteURL == context?.pageContext.web.absoluteUrl) {
+                        teamSize = Number(pA.teamSize);
+                    }
+                })
+            }
+            let AllocatedEffort = Number(teamSize) * totalAvailableHours;
+            let resourceUtilization = (TotalActualEffort / AllocatedEffort) * 100;
+            setResourceUtilization(parseFloat(resourceUtilization.toFixed(2)));
+
+            const monthlyEffort = new Map<string, number>();
+            const addEffort = (raw: any, val: number) => {
+                if (raw == null || val == null) return;
+                const d = raw instanceof Date ? raw : new Date(raw);
+                if (isNaN(d.getTime())) return;
+                const key = `${d.getFullYear()}-${('0' + (d.getMonth() + 1)).slice(-2)}`;
+                monthlyEffort.set(key, (monthlyEffort.get(key) || 0) + Number(val));
+            };
+            closedTaskByWorkItem.forEach(item => addEffort(item?.ActualStartDate, item?.ActualEffort));
+            ManagementEffortLogData.forEach(m => addEffort(m?.ActualStartDate, m?.ActualEffortHrs));
+            AMSEffortLogData.forEach(a => addEffort(a?.ActualStartDate, a?.ActualEfforts));
+            const monthlyWorkingDays = 19;
+            const monthlyAvailableHours = monthlyWorkingDays * 8;
+            let monthlyTeamSize = 1;
+            if (Array.isArray(PPOApproversData)) {
+                PPOApproversData.forEach(p => {
+                    if (p?.SiteURL === context?.pageContext.web.absoluteUrl) {
+                        const size = Number(p.teamSize ?? p.TeamSize);
+                        if (!isNaN(size) && size > 0) monthlyTeamSize = size;
                     }
                 });
+            }
+            const monthlyAllocation = monthlyAvailableHours * monthlyTeamSize;
+            const trendRows: any[] = [['Month', 'Resource Utilization (%)', { role: 'annotation', type: 'string' }, 'LSL', 'USL']];
+            const monthlyEffortKeys: string[] = [];
+            monthlyEffort.forEach((_, k) => {
+                monthlyEffortKeys.push(k);
+            });
+            let USLLSLValuesRU = MetricsData.filter(m => m.title === 'Resource Utilization').map(i => {
+                return { USL: i.USL, LSL: i.LSL, Title: i.Title }
+            });
+            monthlyEffortKeys.sort((a, b) => a.localeCompare(b)).forEach(key => {
+                const sum = monthlyEffort.get(key) || 0;
+                const value = monthlyAllocation === 0 ? 0 : (sum / monthlyAllocation) * 100;
+                trendRows.push([key, parseFloat(value.toFixed(2)), parseFloat(value.toFixed(2)).toString(), USLLSLValuesRU[0]?.LSL ?? 0, USLLSLValuesRU[0]?.USL ?? 0]);
+            });
+            setResourceUtilizationTrendChartData(trendRows);
+
+            //To create a cost of quality we need Prevention cost, appraisal cost,failure cost
+            //TotalActualEffort
+            //    const failureCost = (() => {
+            //        const toNum = (v: any) => {
+            //            const n = Number(v);
+            //            return isNaN(n) ? 0 : n;
+            //        };
+            let failureCost = 0;
+
+            // 1) closedTaskByWorkItem: TaskType starts with "Rework" OR equals "Re-testing"/"retesting"
+            if (Array.isArray(closedTaskByWorkItem)) {
+                closedTaskByWorkItem.forEach(item => {
+                    if (new Date(item?.ActualStartDate).getMonth().toString() === selectedMonth) {
+                        const tt = String(item?.TaskType ?? '').trim().toLowerCase();
+                        if ((tt.toLocaleLowerCase().indexOf('rework') === 0) || tt.toLocaleLowerCase() === 're-testing' || tt.toLocaleLowerCase() === 'retesting') {
+                            failureCost += Number(item?.ActualEffort);
+                        }
+                    }
+                });
+            }
+
+            // 2) ManagementEffortLogData: ManagementTaskActivity starts with "Rework" OR equals specified implementations
+            if (Array.isArray(ManagementEffortLogData)) {
+                ManagementEffortLogData.forEach(m => {
+                    // tolerate possible property name variations
+                    if (new Date(m?.ActualStartDate).getMonth().toString() === selectedMonth) {
+                        const activity = String(m?.ManagementTaskActivity ?? m?.ManagmentTaskActivity ?? '').trim().toLowerCase();
+                        if (
+                            (activity.toLocaleLowerCase().indexOf('rework') === 0) ||
+                            activity === 'implementation of corrective action' ||
+                            activity === 'implementation of preventive action'
+                        ) {
+                            failureCost += Number(m?.ActualEffortHrs);
+                        }
+                    }
+                });
+            }
+
+            // 3) AMSEffortLogData: TaskType equals "solution rework effort"
+            if (Array.isArray(AMSEffortLogData)) {
+                AMSEffortLogData.forEach(a => {
+                    if (new Date(a?.ActualStartDate).getMonth().toString() === selectedMonth) {
+                        const at = String(a?.TaskType ?? '').trim().toLowerCase();
+                        if (at.toLocaleLowerCase() === 'solution rework effort') {
+                            failureCost += Number(a?.ActualEfforts);
+                        }
+                    }
+                });
+            }
+            //Appraisal Cost
+            //    const appraisalCost = (() => {
+            //        const toNum = (v: any) => {
+            //            const n = Number(v);
+            //            return isNaN(n) ? 0 : n;
+            //        };
+            let appraisalCost = 0;
+
+            // closedTaskByWorkItem: exact matches for testing/review-related types
+            const appraisalTypes = new Set([
+                'unit testing', 'code review', 'system testing', 'integration testing', 'acceptance testing',
+                'review of test cases', 'review of design document', 'review of unit test cases', 'review of release notes',
+                'review build', 'review of test plan', 'review of test environment setup', 'review delivery notes'
+            ].map(s => s.toLowerCase()));
+
+            if (Array.isArray(closedTaskByWorkItem)) {
+                closedTaskByWorkItem.forEach(item => {
+                    if (new Date(item?.ActualStartDate).getMonth().toString() !== selectedMonth) return;
+                    const tt = String(item?.TaskType ?? '').trim().toLowerCase();
+                    if (appraisalTypes.has(tt)) appraisalCost += Number(item?.ActualEffort);
+                });
+            }
+
+            // ManagementEffortLogData: ManagementTaskActivity == 'Audits'
+            if (Array.isArray(ManagementEffortLogData)) {
+                ManagementEffortLogData.forEach(m => {
+                    if (new Date(m?.ActualStartDate).getMonth().toString() !== selectedMonth) return;
+                    const activity = String(m?.ManagementTaskActivity ?? m?.ManagmentTaskActivity ?? '').trim().toLowerCase();
+                    if (activity === 'audits' || activity === 'audit') appraisalCost += Number(m?.ActualEffortHrs);
+                });
+            }
+
+            // AMSEffortLogData: TaskType matches solution review/testing (tolerate 'soultion' spelling)
+
+            if (Array.isArray(AMSEffortLogData)) {
+                AMSEffortLogData.forEach(a => {
+                    if (new Date(a?.ActualStartDate).getMonth().toString() !== selectedMonth) return;
+                    const at = String(a?.TaskType ?? '').trim().toLowerCase();
+                    if (at === 'solution review effort' || at === 'solution testing effort' || at === 'soultion review effort' || at === 'soultion testing effort') {
+                        appraisalCost += Number(a?.ActualEfforts);
+                    }
+                });
+            }
+
+
+            //Prevention Cost
+            let preventionCost = 0;
+            preventionCost = ManagementEffortLogDataFiltered
+            let costOfQualityTotal = (preventionCost + appraisalCost + failureCost) * 100 / TotalActualEffort;
+
+            setcostOfQualityTotal(parseFloat(costOfQualityTotal.toFixed(2)));
+            const monthKeyFrom = (raw: any) => {
+                if (!raw) return null;
+                const d = raw instanceof Date ? raw : new Date(raw);
+                if (isNaN(d.getTime())) return null;
+                return `${d.getFullYear()}-${('0' + (d.getMonth() + 1)).slice(-2)}`;
+            };
+            const monthlyBuckets = new Map<string, { prevention: number; appraisal: number; failure: number }>();
+            const ensureBucket = (key: string | null) => {
+                if (!key) return null;
+                if (!monthlyBuckets.has(key)) {
+                    monthlyBuckets.set(key, { prevention: 0, appraisal: 0, failure: 0 });
+                }
+                return monthlyBuckets.get(key)!;
+            };
+            closedTaskByWorkItem.forEach(item => {
+                const bucket = ensureBucket(monthKeyFrom(item?.ActualStartDate));
+                if (!bucket) return;
+                const tt = String(item?.TaskType ?? '').trim().toLowerCase();
+                if (appraisalTypes.has(tt)) bucket.appraisal += Number(item?.ActualEffort) || 0;
+                if (tt.indexOf('rework') || tt === 're-testing' || tt === 'retesting') bucket.failure += Number(item?.ActualEffort) || 0;
+            });
+            ManagementEffortLogData.forEach(m => {
+                const bucket = ensureBucket(monthKeyFrom(m?.ActualStartDate));
+                if (!bucket) return;
+                const activity = String(m?.ManagementTaskActivity ?? m?.ManagmentTaskActivity ?? '').trim().toLowerCase();
+                const effort = Number(m?.ActualEffortHrs) || 0;
+                if (activity === 'audits' || activity === 'audit') bucket.appraisal += effort;
+                if (activity.indexOf('rework') || activity === 'implementation of corrective action' || activity === 'implementation of preventive action') bucket.failure += effort;
+                if (m?.Completion) bucket.prevention += effort;
+            });
+            AMSEffortLogData.forEach(a => {
+                const bucket = ensureBucket(monthKeyFrom(a?.ActualStartDate));
+                if (!bucket) return;
+                const at = String(a?.TaskType ?? '').trim().toLowerCase();
+                const effort = Number(a?.ActualEfforts) || 0;
+                if (at === 'solution review effort' || at === 'solution testing effort' || at === 'soultion review effort' || at === 'soultion testing effort') bucket.appraisal += effort;
+                if (at === 'solution rework effort') bucket.failure += effort;
+            });
+            const sortedMonths: string[] = [];
+            monthlyBuckets.forEach((_, k) => {
+                sortedMonths.push(k);
+            });
+            sortedMonths.sort((a, b) => a.localeCompare(b));
+            let USLLSLValuesCOQ = MetricsData.filter(m => m.title === 'Cost of Quality').map(i => {
+                return { USL: i.USL, LSL: i.LSL, Title: i.Title }
+            });
+            const coqTrendRows: any[] = [['Month', 'Cost of Quality (%)', { role: 'annotation', type: 'string' }, 'LSL', 'USL']];
+            sortedMonths.forEach(monthKey => {
+                const bucket = monthlyBuckets.get(monthKey)!;
+                const denominator = (monthlyEffort.get(monthKey) || 0) || 1;
+                const totalCost = bucket.prevention + bucket.appraisal + bucket.failure;
+                coqTrendRows.push([
+                    monthKey,
+                    parseFloat(((totalCost * 100) / denominator).toFixed(2)),
+                    parseFloat(((totalCost * 100) / denominator).toFixed(2)),
+                    USLLSLValuesCOQ[0]?.LSL ?? 0,
+                    USLLSLValuesCOQ[0]?.USL ?? 0
+                ]);
+            });
+            setCostOfQualityTrendChartData(coqTrendRows);
+            //code review defects list unittesting from testing defects data systemtesting defects from testing defects data
+            testingDefectDataForDashboard(WorkItemActualEffort);
+
+            if (selectedProjectType?.toLocaleLowerCase() == 'devm') {
                 //Effort Variation Trend Data
-                let USLLSLValuesEV = MetricsData.filter(m => m.title === 'Effort Variation').map(i => {
+                let USLLSLValuesEV = MetricsData.filter(m => m.title === 'Effort Variation_Month').map(i => {
                     return { USL: i.USL, LSL: i.LSL, Title: i.Title }
                 });
                 let effortVariationTrendData: any[] = []
                 effortVariationTrendData.push(['Month', 'Effort Variation', { role: 'annotation', type: 'string' }, 'LSL', 'USL']);
                 Object.keys(groupedByMonth).sort((a, b) => a.localeCompare(b)).forEach(monthKey => {
                     const effortVariation = ((groupedByMonth[monthKey].ActualEffort - groupedByMonth[monthKey].PlannedEffort) * 100) / groupedByMonth[monthKey].PlannedEffort;
-                    effortVariationTrendData.push([monthKey, parseFloat(effortVariation.toFixed(2)), parseFloat(effortVariation.toFixed(2)), USLLSLValuesEV[0].LSL, USLLSLValuesEV[0].USL]);
+                    effortVariationTrendData.push([monthKey, parseFloat(effortVariation.toFixed(2)), parseFloat(effortVariation.toFixed(2)), USLLSLValuesEV[0]?.LSL ?? 0, USLLSLValuesEV[0]?.USL ?? 0]);
                 });
                 setefforVatiationChartData(effortVariationTrendData);
                 //Overall Productivity Trend Data
                 let overallProductivityTrendData: any[] = []
                 overallProductivityTrendData.push(['Month', 'Overall Productivity', { role: 'annotation', type: 'string' }, 'LSL', 'USL']);
-                let USLLSLValuesOAP = MetricsData.filter(m => m.title === 'Overall Productivity').map(i => {
+                let USLLSLValuesOAP = MetricsData.filter(m => m.title === 'Overall Productivity_Month').map(i => {
                     return { USL: i.USL, LSL: i.LSL, Title: i.Title }
                 });
                 Object.keys(groupedByMonth).sort((a, b) => a.localeCompare(b)).forEach(monthKey => {
                     const overallProductivity = (groupedByMonth[monthKey].ActualEffort) / (groupedByMonth[monthKey].size);
-                    overallProductivityTrendData.push([monthKey, parseFloat(overallProductivity.toFixed(2)), parseFloat(overallProductivity.toFixed(2)), USLLSLValuesOAP[0].LSL, USLLSLValuesOAP[0].USL]);
+                    overallProductivityTrendData.push([monthKey, parseFloat(overallProductivity.toFixed(2)), parseFloat(overallProductivity.toFixed(2)), USLLSLValuesOAP[0]?.LSL ?? 0, USLLSLValuesOAP[0]?.USL ?? 0]);
                 });
                 setOverallProductivityChartData(overallProductivityTrendData);
                 //Scheduled Variation Trend Data
                 let scheduledVatiationTrendData: any[] = []
                 scheduledVatiationTrendData.push(['Month', 'Scheduled Variation', { role: 'annotation', type: 'string' }, 'LSL', 'USL']);
-                let USLLSLValuesSVTrend = MetricsData.filter(m => m.title === 'Schedule Variation').map(i => {
+                let USLLSLValuesSVTrend = MetricsData.filter(m => m.title === 'Schedule Variation_Month').map(i => {
                     return { USL: i.USL, LSL: i.LSL, Title: i.Title }
                 });
                 Object.keys(groupedByMonth).sort((a, b) => a.localeCompare(b)).forEach(monthKey => {
                     const scheduledVariation = (groupedByMonth[monthKey].plannedDuration !== 0) ? ((groupedByMonth[monthKey].ActualEffort - groupedByMonth[monthKey].PlannedEffort) * 100) / groupedByMonth[monthKey].plannedDuration : 0;
-                    scheduledVatiationTrendData.push([monthKey, parseFloat(scheduledVariation.toFixed(2)), parseFloat(scheduledVariation.toFixed(2)), USLLSLValuesSVTrend[0].LSL, USLLSLValuesSVTrend[0].USL]);
+                    scheduledVatiationTrendData.push([monthKey, parseFloat(scheduledVariation.toFixed(2)), parseFloat(scheduledVariation.toFixed(2)), USLLSLValuesSVTrend[0]?.LSL ?? 0, USLLSLValuesSVTrend[0]?.USL ?? 0]);
                 });
                 setscheduledVatiationChartData(scheduledVatiationTrendData);
 
-
-
-                // let sumOfEV = 0.0
-                let standardDeviationEV = 0.0;
-                let standardDeviationSV = 0.0;
-                let meanOverallProductivity = 0.0;
-
-
-                //Calculating Mean and Standard Deviation for Effort Variation, Scheduled Variation and Overall Productivity,defect density for selected month
-                meanEffortVariation = WorkLogItemWithPlannedandActualEfforts.filter(i => new Date(i.ActualEndDate).getMonth().toString() == selectedMonth).reduce((sum, x) => sum + x.EffortVariation, 0) / WorkLogItemWithPlannedandActualEfforts.length;
-                meanSV = WorkLogItemWithPlannedandActualEfforts.filter(i => new Date(i.ActualEndDate).getMonth().toString() == selectedMonth).reduce((sum, x) => sum + x.ScheduledVariation, 0) / WorkLogItemWithPlannedandActualEfforts.length;
-                meanOverallProductivity = WorkLogItemWithPlannedandActualEfforts.filter(i => new Date(i.ActualEndDate).getMonth().toString() == selectedMonth).reduce((sum, x) => sum + x.OverAllProductivity, 0) / WorkLogItemWithPlannedandActualEfforts.length;
-                const varianceEV = WorkLogItemWithPlannedandActualEfforts.filter(i => new Date(i.ActualEndDate).getMonth().toString() == selectedMonth).reduce((acc, x) => acc + (x.EffortVariation - meanEffortVariation) ** 2, 0) / WorkLogItemWithPlannedandActualEfforts.length;
-                const varianceSV = WorkLogItemWithPlannedandActualEfforts.filter(i => new Date(i.ActualEndDate).getMonth().toString() == selectedMonth).reduce((acc, x) => acc + (x.ScheduledVariation - meanSV) ** 2, 0) / WorkLogItemWithPlannedandActualEfforts.length;
-                standardDeviationEV = parseFloat(Math.sqrt(varianceEV).toFixed(2));
-                standardDeviationSV = parseFloat(Math.sqrt(varianceSV).toFixed(2))
-                setMeanEffortVariation(parseFloat(meanEffortVariation.toFixed(2)));
-                setMeanSV(parseFloat(meanEffortVariation.toFixed(2)));
-                setMeanOverallProductivity(parseFloat(meanOverallProductivity.toFixed(2)))
-                setStandardDeviationOfEV(standardDeviationEV);
-                setStandardDeviationOfSV(standardDeviationSV);
-                const OAPSize = WorkLogItemWithPlannedandActualEfforts.filter(i => new Date(i.ActualEndDate).getMonth().toString() == selectedMonth).reduce((sum, x) => sum + x.size, 0);
-                const OAPEffort = WorkLogItemWithPlannedandActualEfforts.filter(i => new Date(i.ActualEndDate).getMonth().toString() == selectedMonth).reduce((sum, x) => sum + x.ActualEffort, 0);
-                setOverAllProductivitySize(OAPSize);
-                setActualEffortOverAllProductivity(OAPEffort);
-                const numofdefects = defectsData.filter(dD => dD.DefectDetectedPhase == 'Post Production' && new Date(dD.DefectDetectedOn).getMonth().toString() == selectedMonth).length
-                setDefectCount(numofdefects);
-                //Calculating the number of Code Review Defects for the selected month and for completed task in worklog managemnet;
-                let totalCodeReviewDefectsForSelectedMonth = 0;
-                WorkLogItemWithPlannedandActualEfforts.filter(wl => new Date(wl.ActualEndDate).getMonth().toString() == selectedMonth).forEach(wlItem => {
-                    const codeReviewDefectsForWorkItem = CodeReviewDefectsData.filter(crD => crD.RequirementID == wlItem.WorkItemNo && new Date(crD.IdentifiedDate).getMonth().toString() == selectedMonth).length
-                    totalCodeReviewDefectsForSelectedMonth += codeReviewDefectsForWorkItem;
-                });
-                setCodeReviewDefectCount(totalCodeReviewDefectsForSelectedMonth);
-
-
-                WorkLogItemWithPlannedandActualEfforts.filter(wl => new Date(wl.ActualEndDate).getMonth().toString() == selectedMonth).forEach(wlItem => {
-                    const codeReviewDefectsForWorkItem = CodeReviewDefectsData.filter(crD => crD.RequirementID == wlItem.WorkItemNo && new Date(crD.IdentifiedDate).getMonth().toString() == selectedMonth).length
-                    totalCodeReviewDefectsForSelectedMonth += codeReviewDefectsForWorkItem;
-                });
-                setCodeReviewDefectCount(totalCodeReviewDefectsForSelectedMonth);
-
-
-                // const variance = nums.reduce((acc, x) => acc + (x - mean) ** 2, 0) / n;
-                //return Math.sqrt(variance);
-
-                //Create a chart for Effort Distribution
-                let ManagementEffortLogDataFiltered = ManagementEffortLogData.filter(m => m?.ActualEndDate != null && new Date(m.ActualEndDate).getMonth().toString() === selectedMonth && m.Completion).reduce((sum, x) => sum + x.ActualEffortHrs, 0);
-                console.log('ManagementEffortLogDataFiltered:', ManagementEffortLogDataFiltered);
-                let effortDistributionData: any[] = []
-                effortDistributionData.push(['Task Type', 'Effort Hrs']);
-                effortDistributionData.push(['Management Efforts', ManagementEffortLogDataFiltered])
-                closedTaskByWorkItem.forEach(item => {
-                    effortDistributionData.push([item.TaskType, item.ActualEffort])
-                });
-                setEffortDistributionData(effortDistributionData);
-
-                //Resource utilization for selected month
-                //let resourceUtilizationData = 0;
-                let TotalActualEffort = 0;
-                closedTaskByWorkItem.forEach(item => {
-                    if (new Date(item.ActualStartDate).getMonth().toString() === selectedMonth) {
-                        TotalActualEffort += item.ActualEffort
-                    }
-
-                });
-                ManagementEffortLogData.forEach(mE => {
-                    if (new Date(mE.ActualStartDate).getMonth().toString() === selectedMonth) {
-                        TotalActualEffort += mE.ActualEffortHrs
-                    }
-                });
-                AMSEffortLogData.forEach(aE => {
-                    //console.log('aE.ActualStartDate:', aE.ActualStartDate);
-                    if (new Date(aE.ActualStartDate).getMonth().toString() === selectedMonth) {
-                        TotalActualEffort += aE.ActualEfforts
-                    }
-                });
-
-                //Calculating total working days in the selected month
-                let totalWorkingDaysInMonth = 19; //Assuming 8 hours per day for 24 working days
-
-                //const totalWorkingDaysInMonth = getWorkingDaysInMonth(new Date().getFullYear(), Number(selectedMonth));
-                const totalAvailableHours = totalWorkingDaysInMonth * 8;
-                let teamSize = 1;
-                if (PPOApproversData != undefined && PPOApproversData.length > 0) {
-                    PPOApproversData.forEach(pA => {
-                        if (pA.SiteURL == context?.pageContext.web.absoluteUrl) {
-                            teamSize = Number(pA.teamSize);
-                        }
-                    })
-                }
-                let AllocatedEffort = Number(teamSize) * totalAvailableHours;
-                let resourceUtilization = (TotalActualEffort / AllocatedEffort) * 100;
-                setResourceUtilization(parseFloat(resourceUtilization.toFixed(2)));
-
-                const monthlyEffort = new Map<string, number>();
-                const addEffort = (raw: any, val: number) => {
-                    if (raw == null || val == null) return;
-                    const d = raw instanceof Date ? raw : new Date(raw);
-                    if (isNaN(d.getTime())) return;
-                    const key = `${d.getFullYear()}-${('0' + (d.getMonth() + 1)).slice(-2)}`;
-                    monthlyEffort.set(key, (monthlyEffort.get(key) || 0) + Number(val));
-                };
-                closedTaskByWorkItem.forEach(item => addEffort(item?.ActualStartDate, item?.ActualEffort));
-                ManagementEffortLogData.forEach(m => addEffort(m?.ActualStartDate, m?.ActualEffortHrs));
-                AMSEffortLogData.forEach(a => addEffort(a?.ActualStartDate, a?.ActualEfforts));
-                const monthlyWorkingDays = 19;
-                const monthlyAvailableHours = monthlyWorkingDays * 8;
-                let monthlyTeamSize = 1;
-                if (Array.isArray(PPOApproversData)) {
-                    PPOApproversData.forEach(p => {
-                        if (p?.SiteURL === context?.pageContext.web.absoluteUrl) {
-                            const size = Number(p.teamSize ?? p.TeamSize);
-                            if (!isNaN(size) && size > 0) monthlyTeamSize = size;
-                        }
-                    });
-                }
-                const monthlyAllocation = monthlyAvailableHours * monthlyTeamSize;
-                const trendRows: any[] = [['Month', 'Resource Utilization (%)', { role: 'annotation', type: 'string' }, 'LSL', 'USL']];
-                const monthlyEffortKeys: string[] = [];
-                monthlyEffort.forEach((_, k) => {
-                    monthlyEffortKeys.push(k);
-                });
-                let USLLSLValuesRU = MetricsData.filter(m => m.title === 'Resource Utilization').map(i => {
-                    return { USL: i.USL, LSL: i.LSL, Title: i.Title }
-                });
-                monthlyEffortKeys.sort((a, b) => a.localeCompare(b)).forEach(key => {
-                    const sum = monthlyEffort.get(key) || 0;
-                    const value = monthlyAllocation === 0 ? 0 : (sum / monthlyAllocation) * 100;
-                    trendRows.push([key, parseFloat(value.toFixed(2)), parseFloat(value.toFixed(2)).toString(), USLLSLValuesRU[0].LSL, USLLSLValuesRU[0].USL]);
-                });
-                setResourceUtilizationTrendChartData(trendRows);
-
-                //To create a cost of quality we need Prevention cost, appraisal cost,failure cost
-                //TotalActualEffort
-                //    const failureCost = (() => {
-                //        const toNum = (v: any) => {
-                //            const n = Number(v);
-                //            return isNaN(n) ? 0 : n;
-                //        };
-                let failureCost = 0;
-
-                // 1) closedTaskByWorkItem: TaskType starts with "Rework" OR equals "Re-testing"/"retesting"
-                if (Array.isArray(closedTaskByWorkItem)) {
-                    closedTaskByWorkItem.forEach(item => {
-                        if (new Date(item?.ActualStartDate).getMonth().toString() === selectedMonth) {
-                            const tt = String(item?.TaskType ?? '').trim().toLowerCase();
-                            if ((tt.toLocaleLowerCase().indexOf('rework') === 0) || tt.toLocaleLowerCase() === 're-testing' || tt.toLocaleLowerCase() === 'retesting') {
-                                failureCost += Number(item?.ActualEffort);
-                            }
-                        }
-                    });
-                }
-
-                // 2) ManagementEffortLogData: ManagementTaskActivity starts with "Rework" OR equals specified implementations
-                if (Array.isArray(ManagementEffortLogData)) {
-                    ManagementEffortLogData.forEach(m => {
-                        // tolerate possible property name variations
-                        if (new Date(m?.ActualStartDate).getMonth().toString() === selectedMonth) {
-                            const activity = String(m?.ManagementTaskActivity ?? m?.ManagmentTaskActivity ?? '').trim().toLowerCase();
-                            if (
-                                (activity.toLocaleLowerCase().indexOf('rework') === 0) ||
-                                activity === 'implementation of corrective action' ||
-                                activity === 'implementation of preventive action'
-                            ) {
-                                failureCost += Number(m?.ActualEffortHrs);
-                            }
-                        }
-                    });
-                }
-
-                // 3) AMSEffortLogData: TaskType equals "solution rework effort"
-                if (Array.isArray(AMSEffortLogData)) {
-                    AMSEffortLogData.forEach(a => {
-                        if (new Date(a?.ActualStartDate).getMonth().toString() === selectedMonth) {
-                            const at = String(a?.TaskType ?? '').trim().toLowerCase();
-                            if (at.toLocaleLowerCase() === 'solution rework effort') {
-                                failureCost += Number(a?.ActualEfforts);
-                            }
-                        }
-                    });
-                }
-                //Appraisal Cost
-                //    const appraisalCost = (() => {
-                //        const toNum = (v: any) => {
-                //            const n = Number(v);
-                //            return isNaN(n) ? 0 : n;
-                //        };
-                let appraisalCost = 0;
-
-                // closedTaskByWorkItem: exact matches for testing/review-related types
-                const appraisalTypes = new Set([
-                    'unit testing', 'code review', 'system testing', 'integration testing', 'acceptance testing',
-                    'review of test cases', 'review of design document', 'review of unit test cases', 'review of release notes',
-                    'review build', 'review of test plan', 'review of test environment setup', 'review delivery notes'
-                ].map(s => s.toLowerCase()));
-
-                if (Array.isArray(closedTaskByWorkItem)) {
-                    closedTaskByWorkItem.forEach(item => {
-                        if (new Date(item?.ActualStartDate).getMonth().toString() !== selectedMonth) return;
-                        const tt = String(item?.TaskType ?? '').trim().toLowerCase();
-                        if (appraisalTypes.has(tt)) appraisalCost += Number(item?.ActualEffort);
-                    });
-                }
-
-                // ManagementEffortLogData: ManagementTaskActivity == 'Audits'
-                if (Array.isArray(ManagementEffortLogData)) {
-                    ManagementEffortLogData.forEach(m => {
-                        if (new Date(m?.ActualStartDate).getMonth().toString() !== selectedMonth) return;
-                        const activity = String(m?.ManagementTaskActivity ?? m?.ManagmentTaskActivity ?? '').trim().toLowerCase();
-                        if (activity === 'audits' || activity === 'audit') appraisalCost += Number(m?.ActualEffortHrs);
-                    });
-                }
-
-                // AMSEffortLogData: TaskType matches solution review/testing (tolerate 'soultion' spelling)
-
-                if (Array.isArray(AMSEffortLogData)) {
-                    AMSEffortLogData.forEach(a => {
-                        if (new Date(a?.ActualStartDate).getMonth().toString() !== selectedMonth) return;
-                        const at = String(a?.TaskType ?? '').trim().toLowerCase();
-                        if (at === 'solution review effort' || at === 'solution testing effort' || at === 'soultion review effort' || at === 'soultion testing effort') {
-                            appraisalCost += Number(a?.ActualEfforts);
-                        }
-                    });
-                }
-
-
-                //Prevention Cost
-                let preventionCost = 0;
-                preventionCost = ManagementEffortLogDataFiltered
-                let costOfQualityTotal = (preventionCost + appraisalCost + failureCost) * 100 / TotalActualEffort;
-                setcostOfQualityTotal(parseFloat(costOfQualityTotal.toFixed(2)));
-                const monthKeyFrom = (raw: any) => {
-                    if (!raw) return null;
-                    const d = raw instanceof Date ? raw : new Date(raw);
-                    if (isNaN(d.getTime())) return null;
-                    return `${d.getFullYear()}-${('0' + (d.getMonth() + 1)).slice(-2)}`;
-                };
-                const monthlyBuckets = new Map<string, { prevention: number; appraisal: number; failure: number }>();
-                const ensureBucket = (key: string | null) => {
-                    if (!key) return null;
-                    if (!monthlyBuckets.has(key)) {
-                        monthlyBuckets.set(key, { prevention: 0, appraisal: 0, failure: 0 });
-                    }
-                    return monthlyBuckets.get(key)!;
-                };
-                closedTaskByWorkItem.forEach(item => {
-                    const bucket = ensureBucket(monthKeyFrom(item?.ActualStartDate));
-                    if (!bucket) return;
-                    const tt = String(item?.TaskType ?? '').trim().toLowerCase();
-                    if (appraisalTypes.has(tt)) bucket.appraisal += Number(item?.ActualEffort) || 0;
-                    if (tt.indexOf('rework') || tt === 're-testing' || tt === 'retesting') bucket.failure += Number(item?.ActualEffort) || 0;
-                });
-                ManagementEffortLogData.forEach(m => {
-                    const bucket = ensureBucket(monthKeyFrom(m?.ActualStartDate));
-                    if (!bucket) return;
-                    const activity = String(m?.ManagementTaskActivity ?? m?.ManagmentTaskActivity ?? '').trim().toLowerCase();
-                    const effort = Number(m?.ActualEffortHrs) || 0;
-                    if (activity === 'audits' || activity === 'audit') bucket.appraisal += effort;
-                    if (activity.indexOf('rework') || activity === 'implementation of corrective action' || activity === 'implementation of preventive action') bucket.failure += effort;
-                    if (m?.Completion) bucket.prevention += effort;
-                });
-                AMSEffortLogData.forEach(a => {
-                    const bucket = ensureBucket(monthKeyFrom(a?.ActualStartDate));
-                    if (!bucket) return;
-                    const at = String(a?.TaskType ?? '').trim().toLowerCase();
-                    const effort = Number(a?.ActualEfforts) || 0;
-                    if (at === 'solution review effort' || at === 'solution testing effort' || at === 'soultion review effort' || at === 'soultion testing effort') bucket.appraisal += effort;
-                    if (at === 'solution rework effort') bucket.failure += effort;
-                });
-                const sortedMonths: string[] = [];
-                monthlyBuckets.forEach((_, k) => {
-                    sortedMonths.push(k);
-                });
-                sortedMonths.sort((a, b) => a.localeCompare(b));
-                let USLLSLValuesCOQ = MetricsData.filter(m => m.title === 'Cost of Quality').map(i => {
-                    return { USL: i.USL, LSL: i.LSL, Title: i.Title }
-                });
-                const coqTrendRows: any[] = [['Month', 'Cost of Quality (%)', { role: 'annotation', type: 'string' }, 'LSL', 'USL']];
-                sortedMonths.forEach(monthKey => {
-                    const bucket = monthlyBuckets.get(monthKey)!;
-                    const denominator = (monthlyEffort.get(monthKey) || 0) || 1;
-                    const totalCost = bucket.prevention + bucket.appraisal + bucket.failure;
-                    coqTrendRows.push([
-                        monthKey,
-                        parseFloat(((totalCost * 100) / denominator).toFixed(2)),
-                        parseFloat(((totalCost * 100) / denominator).toFixed(2)),
-                        USLLSLValuesCOQ[0].LSL,
-                        USLLSLValuesCOQ[0].USL
-                    ]);
-                });
-                setCostOfQualityTrendChartData(coqTrendRows);
-                //code review defects list unittesting from testing defects data systemtesting defects from testing defects data
-                testingDefectDataForDashboard(WorkItemActualEffort);
-
+            }
+             if (selectedProjectType?.toLocaleLowerCase() === 'dev') {
                 //Create a chart for Effort Variation
-                // let EfforVatiationChartData: any[] = []
-                // EfforVatiationChartData.push(['WorkItemNo', 'Effort Variation', 'LSL', 'USL']);
-                // let USLLSLValues = MetricsData.filter(m => m.title === 'Effort Variation').map(i => {
-                //     return { USL: i.USL, LSL: i.LSL, Title: i.Title }
-                // });
-                // WorkLogItemWithPlannedandActualEfforts.forEach(ev => {
-                //     //new Date(ev.ActualEndDate).toLocaleString('en-US', { month: 'short' })
-                //     EfforVatiationChartData.push([ev.WorkItemNo, ev.EffortVariation, USLLSLValues[0].LSL, USLLSLValues[0].USL])
-                // });
-                // setefforVatiationChartData(EfforVatiationChartData);
+                //if (WorkLogItemWithPlannedandActualEfforts.length > 0) {
+                let EfforVatiationChartDataDEV: any[] = []
+                EfforVatiationChartDataDEV.push(['WorkItemNo', 'Effort Variation', 'LSL', 'USL']);
+                let USLLSLValuesDEV = MetricsData.filter(m => m.title === 'Effort Variation').map(i => {
+                    return { USL: i.USL, LSL: i.LSL, Title: i.Title }
+                });
+                WorkLogItemWithPlannedandActualEfforts.forEach(ev => {
+                    //new Date(ev.ActualEndDate).toLocaleString('en-US', { month: 'short' })
+                    EfforVatiationChartDataDEV.push([ev.WorkItemNo, ev.EffortVariation, USLLSLValuesDEV[0]?.LSL ?? 0, USLLSLValuesDEV[0]?.USL ?? 0])
+                });
+                setefforVatiationChartData(EfforVatiationChartDataDEV);
 
                 //Create chart for scheduled Variation
-                // let ScheduledVatiationChartData: any[] = []
-                // ScheduledVatiationChartData.push(['WorkItemNo', 'Schedule Variation', 'LSL', 'USL']);
-                // let USLLSLValuesSV = MetricsData.filter(m => m.title === 'Schedule Variation').map(i => {
-                //     return { USL: i.USL, LSL: i.LSL, Title: i.Title }
-                // });
-                // WorkLogItemWithPlannedandActualEfforts.forEach(sv => {
-                //     //new Date(ev.ActualEndDate).toLocaleString('en-US', { month: 'short' })
-                //     ScheduledVatiationChartData.push([sv.WorkItemNo, sv.ScheduledVariation, USLLSLValuesSV[0].LSL, USLLSLValuesSV[0].USL])
-                // });
-                // setscheduledVatiationChartData(ScheduledVatiationChartData);
+                let ScheduledVatiationChartDataDEV: any[] = []
+                ScheduledVatiationChartDataDEV.push(['WorkItemNo', 'Schedule Variation', 'LSL', 'USL']);
+                let USLLSLValuesSVDEV = MetricsData.filter(m => m.title === 'Schedule Variation').map(i => {
+                    return { USL: i.USL, LSL: i.LSL, Title: i.Title }
+                });
+                WorkLogItemWithPlannedandActualEfforts.forEach(sv => {
+                    //new Date(ev.ActualEndDate).toLocaleString('en-US', { month: 'short' })
+                    ScheduledVatiationChartDataDEV.push([sv.WorkItemNo, sv.ScheduledVariation, USLLSLValuesSVDEV[0]?.LSL ?? 0, USLLSLValuesSVDEV[0]?.USL ?? 0])
+                });
+                setscheduledVatiationChartData(ScheduledVatiationChartDataDEV);
 
                 //Create a chart for Overall productivity
 
-                // let OverallProductivityChartData: any[] = []
-                // OverallProductivityChartData.push(['WorkItemNo', 'Overall Productivity', 'LSL', 'USL']);
-                // let USLLSLValuesSVOAP = MetricsData.filter(m => m.title === 'Overall Productivity').map(i => {
-                //     return { USL: i.USL, LSL: i.LSL, Title: i.Title }
-                // });
-                // WorkLogItemWithPlannedandActualEfforts.forEach(op => {
-                //     //new Date(ev.ActualEndDate).toLocaleString('en-US', { month: 'short' })
-                //     OverallProductivityChartData.push([op.WorkItemNo, op.OverAllProductivity, USLLSLValuesSVOAP[0].LSL, USLLSLValuesSVOAP[0].USL])
-                // });
-                // console.log('overall productivity', OverallProductivityChartData)
-                // setOverallProductivityChartData(OverallProductivityChartData);
-                console.log('Mean of Effort Variation', meanEffortVariation);
-                console.log('Mean of Effort Variation', MeanEffortVariation);
-                console.log('Mean of Effort Variation', MeanSV);
-                console.log('Mean OverAllProductivity', MeanOverallProductivity)
-                console.log('Standard Deviation of Effort Variation', StandardDeviationOfEV);
-                console.log('Standard Deviation of Scheduled Variation', StandardDeviationSV);
-                setFilteredWorkLogData(WorkLogItemWithPlannedandActualEfforts);
-                console.log('Filtered WorkLogData result:', WorkLogItemWithPlannedandActualEfforts);
-                console.log('Filtered WorkLogData:', filteredWorkLogData);
+                let OverallProductivityChartDataDEV: any[] = []
+                OverallProductivityChartDataDEV.push(['WorkItemNo', 'Overall Productivity', 'LSL', 'USL']);
+                let USLLSLValuesOPDEV = MetricsData.filter(m => m.title === 'Overall Productivity').map(i => {
+                    return { USL: i.USL, LSL: i.LSL, Title: i.Title }
+                });
+                WorkLogItemWithPlannedandActualEfforts.forEach(op => {
+                    //new Date(ev.ActualEndDate).toLocaleString('en-US', { month: 'short' })
+                    OverallProductivityChartDataDEV.push([op.WorkItemNo, op.OverAllProductivity, USLLSLValuesOPDEV[0]?.LSL ?? 0, USLLSLValuesOPDEV[0]?.USL ?? 0])
+                });
+                console.log('overall productivity', OverallProductivityChartDataDEV)
+                setOverallProductivityChartData(OverallProductivityChartDataDEV);
+
+
             }
 
+
+
+
+
+
+
+            // setOverallProductivityChartData(OverallProductivityChartData);
+            console.log('Mean of Effort Variation', meanEffortVariation);
+            console.log('Mean of Effort Variation', MeanEffortVariation);
+            console.log('Mean of Effort Variation', MeanSV);
+            console.log('Mean OverAllProductivity', MeanOverallProductivity)
+            console.log('Standard Deviation of Effort Variation', StandardDeviationOfEV);
+            console.log('Standard Deviation of Scheduled Variation', StandardDeviationSV);
+            setFilteredWorkLogData(WorkLogItemWithPlannedandActualEfforts);
+            console.log('Filtered WorkLogData result:', WorkLogItemWithPlannedandActualEfforts);
+            console.log('Filtered WorkLogData:', filteredWorkLogData);
+
         }
-    }, [TaskManagementData, WorkLogData, MetricsData, selectedMonth, defectsData, CodeReviewDefectsData, AMSEffortLogData, PPOApproversData, ManagementEffortLogData]);
+    }, [TaskManagementData, WorkLogData, MetricsData, selectedMonth, defectsData, CodeReviewDefectsData, AMSEffortLogData, PPOApproversData, ManagementEffortLogData, selectedProjectType]);
     {/* -------------------------------- DEVM Dashboard Data calculations Ended ---------------------- */ }
 
     //-------------------------------- Testing Defects Data Load Started ----------------------  */}
@@ -1666,6 +1827,7 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
         }
     }, [context]);
     const loadAMSTicketsData = async () => {
+        if (!context) return;
         const genericServiceInstance: IGenericService = new GenericService(undefined, context);
         genericServiceInstance.init(undefined, context);
         const AMSTicketsRepo: IAMSEffortLogRepository = new AMSEffortLogRepository(genericServiceInstance);
@@ -1682,6 +1844,7 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
     }
 
     const loadDefectsData = async () => {
+        if (!context) return;
         const genericServiceInstance: IGenericService = new GenericService(undefined, context);
         genericServiceInstance.init(undefined, context);
         const DefectsRepo: ITestingDefectsRepository = new TestingDefectsRepository(genericServiceInstance);
@@ -1697,8 +1860,8 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
             DefectDetectedOn: m.DefectDetectedOn,
             DefectDetectedBy: m.DefectDetectedBy,
             DefectStatus: m.DefectStatus,
-            DefectType: m.DefectType,
-            DefectClassification: m.DefectClassification,
+            // DefectType: m.DefectType,
+            // DefectClassification: m.DefectClassification,
             DefectOriginPhase: m.DefectOriginPhase,
             DefectDetectedPhase: m.DefectDetectedPhase,
             Severity: m.Severity,
@@ -1719,6 +1882,7 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
     }, [context]);
 
     const loadCodeReviewDefectsData = async () => {
+        if (!context) return;
         const genericServiceInstance: IGenericService = new GenericService(undefined, context);
         genericServiceInstance.init(undefined, context);
         const DefectsRepo: ICodeReviewDefectsRepository = new CodeReviewDefectRepository(genericServiceInstance);
@@ -1765,39 +1929,39 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
 
     }, [csiData, MetricsData, context]);
 
-   
-function parseDDMMYYYY(input: string): Date {
-  if (typeof input !== 'string') return new Date(NaN);
 
-  const s = input.trim();
+    function parseDDMMYYYY(input: string): Date {
+        if (typeof input !== 'string') return new Date(NaN);
 
-  // Remove time part if present (e.g., "06/01/2026 12:00 AM")
-  const datePart = s.split(' ')[0];
+        const s = input.trim();
 
-  // Accept separators: / - . or mixed
-  const parts = datePart.split(/[\/\-.]/);
-  if (parts.length !== 3) return new Date(NaN);
+        // Remove time part if present (e.g., "06/01/2026 12:00 AM")
+        const datePart = s.split(' ')[0];
 
-  let [ddStr, mmStr, yyyyStr] = parts.map(p => p.trim());
+        // Accept separators: / - . or mixed
+        const parts = datePart.split(/[\/\-.]/);
+        if (parts.length !== 3) return new Date(NaN);
 
-  // Handle 2-digit year by assuming 2000–2099 (adjust to your business rule)
-  if (yyyyStr.length === 2) yyyyStr = '20' + yyyyStr;
+        let [ddStr, mmStr, yyyyStr] = parts.map(p => p.trim());
 
-  const dd = Number(ddStr);
-  const mm = Number(mmStr);
-  const yyyy = Number(yyyyStr);
+        // Handle 2-digit year by assuming 2000–2099 (adjust to your business rule)
+        if (yyyyStr.length === 2) yyyyStr = '20' + yyyyStr;
 
-  // Basic numeric checks
-  if (!Number(dd) || !Number(mm) || !Number(yyyy)) return new Date(NaN);
-  if (mm < 1 || mm > 12) return new Date(NaN);
+        const dd = Number(ddStr);
+        const mm = Number(mmStr);
+        const yyyy = Number(yyyyStr);
 
-  // Days in month (handles leap years)
-  const daysInMonth = new Date(yyyy, mm, 0).getDate(); // using local month to compute count
-  if (dd < 1 || dd > daysInMonth) return new Date(NaN);
+        // Basic numeric checks
+        if (!Number(dd) || !Number(mm) || !Number(yyyy)) return new Date(NaN);
+        if (mm < 1 || mm > 12) return new Date(NaN);
 
-  // Construct date in UTC to avoid timezone shift
-  return new Date(Date.UTC(yyyy, mm - 1, dd));
-}
+        // Days in month (handles leap years)
+        const daysInMonth = new Date(yyyy, mm, 0).getDate(); // using local month to compute count
+        if (dd < 1 || dd > daysInMonth) return new Date(NaN);
+
+        // Construct date in UTC to avoid timezone shift
+        return new Date(Date.UTC(yyyy, mm - 1, dd));
+    }
 
 
 
@@ -1817,18 +1981,18 @@ function parseDDMMYYYY(input: string): Date {
                 .slice()
                 .sort((a: any, b: any) => new Date(a.CSATAquiredDate).getTime() - new Date(b.CSATAquiredDate).getTime())
                 .map((it: any) => {
-                   
+
                     // const d = parseDDMMYYYY(it.CSATAquiredDate);
                     //  console.log('date',d)
                     // const label = d.toLocaleDateString('en-US');
                     const value = Number(it.Title);
-                    csiTrendataForChart.push([new Date(it.CSATAquiredDate).toLocaleDateString('en-US'), value, value, Number(USLLSLValues[0].LSL), Number(USLLSLValues[0].USL)]);
+                    csiTrendataForChart.push([new Date(it.CSATAquiredDate).toLocaleDateString('en-US'), value, value, Number(USLLSLValues[0]?.LSL ?? 0), Number(USLLSLValues[0]?.USL ?? 0)]);
                 });
 
         }
 
         setCSITrendData(csiTrendataForChart);
-        console.log('csiTrendataForChart',csiTrendataForChart)
+        console.log('csiTrendataForChart', csiTrendataForChart)
 
     });
 
@@ -1865,6 +2029,7 @@ function parseDDMMYYYY(input: string): Date {
     }, [facilitationReportData]);
 
     const loadFacilitationData = async () => {
+        if (!context) return;
         const genericServiceInstance: IGenericService = new GenericService(undefined, context);
         genericServiceInstance.init(undefined, context);
         const FacilitationRepo: IFacilitationReportRepository = new FacilitationReportRepository(genericServiceInstance);
@@ -1929,7 +2094,7 @@ function parseDDMMYYYY(input: string): Date {
             let pci = buildPCIChartData();
             setpciChartData(pci);
         }
-    }, [context,PPOApproversData,ManagementEffortLogData,facilitationReportData]);
+    }, [context, PPOApproversData, ManagementEffortLogData, facilitationReportData]);
 
     // Build PCI chart data:
     function buildPCIChartData(): any[] {
@@ -1978,7 +2143,7 @@ function parseDDMMYYYY(input: string): Date {
                 const yyyy = Number(parts[0]);
                 const mm = Number(parts[1]);
                 const dd = Number(parts[2]);
-                const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
                 const yy = String(yyyy).slice(-2);
                 return `${('0' + dd).slice(-2)}-${months[mm - 1]}-${yy}`;
             };
@@ -2021,14 +2186,14 @@ function parseDDMMYYYY(input: string): Date {
                 const openNC = Number(val.nc || 0);
                 const openObs = Number(val.observation || 0);
                 const openFC = Number(val.fcFinding || 0);
-                console.log(`PCI for ${k}: NC=${openNC}, Obs=${openObs}, FC=${openFC}`);    
+                console.log(`PCI for ${k}: NC=${openNC}, Obs=${openObs}, FC=${openFC}`);
                 const pci = parseFloat((-((20 * openNC) + (10 * openObs) + (10 * openFC))).toFixed(2));
                 rows.push([formatLabel(k), pci, String(pci)]);
             });
 
             // if no rows, return a small placeholder series to avoid empty chart errors
             if (rows.length === 1) {
-                rows.push([formatLabel(new Date().toISOString().slice(0,10)), 0, '0']);
+                rows.push([formatLabel(new Date().toISOString().slice(0, 10)), 0, '0']);
             }
 
             return rows;
@@ -2038,17 +2203,17 @@ function parseDDMMYYYY(input: string): Date {
         }
     }
     React.useEffect(() => {
-		fetchRCAItems();
-	}, [context]);
+        fetchRCAItems();
+    }, [context]);
 
-     const fetchRCAItems = async () => {
-		const genericServiceInstance: IGenericService = new GenericService(undefined, context);
-		genericServiceInstance.init(undefined, context);
-		const RCARepo: IRCARepository = new RCARepository(genericServiceInstance);
-		RCARepo.setService(genericServiceInstance);
-		const RAitems = await getRCAItems(true, context);
-		setRCAItems(RAitems);
-	}
+    const fetchRCAItems = async () => {
+        const genericServiceInstance: IGenericService = new GenericService(undefined, context);
+        genericServiceInstance.init(undefined, context);
+        const RCARepo: IRCARepository = new RCARepository(genericServiceInstance);
+        RCARepo.setService(genericServiceInstance);
+        const RAitems = await getRCAItems(true, context);
+        setRCAItems(RAitems);
+    }
 
 
     return (
@@ -2060,7 +2225,7 @@ function parseDDMMYYYY(input: string): Date {
                     <Stack horizontal horizontalAlign="center" tokens={{ childrenGap: 12 }} styles={{ root: { marginTop: 12 } }}>
                         <Dropdown
                             selectedKey={selectedProjectType}
-                            onChange={(_, option) => setSelectedProjectType(option?.key as string)}
+                            onChange={(_, value) => handleProjectTypeChange(value)}
                             options={ProjectType}
                             styles={{ root: { width: 180 } }}
                         />
@@ -2142,7 +2307,7 @@ function parseDDMMYYYY(input: string): Date {
 
 
 
-                        {dialogPivotKey === 'Effort Variation' && (
+                        {(dialogPivotKey === 'Effort Variation' || dialogPivotKey === 'Effort Variation_Month') && (
                             <div style={chartsContainerStyle}>
                                 <div style={chartBoxStyle}>
                                     <h3>Effort Variation trend</h3>
@@ -2151,7 +2316,7 @@ function parseDDMMYYYY(input: string): Date {
                             </div>
                         )}
 
-                        {dialogPivotKey === 'Schedule Variation' && (
+                        {(dialogPivotKey === 'Schedule Variation' || dialogPivotKey === 'Schedule Variation_Month') && (
                             <div style={chartsContainerStyle}>
                                 <div style={chartBoxStyle}>
                                     <h3>Schedule Variation trend</h3>
@@ -2160,7 +2325,7 @@ function parseDDMMYYYY(input: string): Date {
                             </div>
                         )}
 
-                        {dialogPivotKey === 'Overall Productivity' && (<>
+                        {(dialogPivotKey === 'Overall Productivity' || dialogPivotKey === 'Overall Productivity_Month') && (<>
                             <div style={chartsContainerStyle}>
                                 <div style={chartBoxStyle}>
                                     <h3>Overall Productivity trend</h3>
@@ -2375,7 +2540,15 @@ function parseDDMMYYYY(input: string): Date {
                                     <ClickableChart chartKey="defect_table" title="Defect Density (bar)" chartType="ColumnChart" data={defectData} options={{ colors: ['#dc3545'] }} width="100%" height="240px" />
                                 </div>
                                 <div style={chartBoxStyle}>
-                                    <ClickableChart chartKey="week" title="Weekly Report" chartType="LineChart" data={weekData} options={{ colors: ['#28a745'] }} width="100%" height="240px" />
+                                    <ClickableChart
+                                        chartKey="week"
+                                        title="Weekly Report"
+                                        chartType="LineChart"
+                                        data={weekData}
+                                        options={{ colors: ['#28a745'] }}
+                                        width="100%"
+                                        height="240px"
+                                    />
                                 </div>
                             </div>
                         </PivotItem>
@@ -2527,7 +2700,7 @@ function parseDDMMYYYY(input: string): Date {
                         <div style={{ ...kpiCardStyle(), cursor: 'default', border: '1px solid rgba(16,24,40,0.04)' }}>
                             <div>
                                 <Text variant="small" styles={{ root: { color: '#666' } }}>Open Root Cause</Text>
-                                <div style={{ fontSize: 26, fontWeight: 700, marginTop: 8, marginBottom: 6, color: '#d9534f' }}>{RCAItems.filter(i=>i?.ActualClosureDateCorrection ==""||i?.ActualClosureDateCorrective ==""||i?.ActualClosureDatePreventive =="").length}</div>
+                                <div style={{ fontSize: 26, fontWeight: 700, marginTop: 8, marginBottom: 6, color: '#d9534f' }}>{RCAItems.filter(i => i?.ActualClosureDateCorrection == "" || i?.ActualClosureDateCorrective == "" || i?.ActualClosureDatePreventive == "").length}</div>
                             </div>
                         </div>
                         <div style={{ ...kpiCardStyle(), cursor: 'default', border: '1px solid rgba(16,24,40,0.04)' }}>
@@ -2539,7 +2712,7 @@ function parseDDMMYYYY(input: string): Date {
                         <div style={{ ...kpiCardStyle(), cursor: 'default', border: '1px solid rgba(16,24,40,0.04)' }}>
                             <div>
                                 <Text variant="small" styles={{ root: { color: '#666' } }}>Open Action Items</Text>
-                                <div style={{ fontSize: 26, fontWeight: 700, marginTop: 8, marginBottom: 6, color: '#5bc0de' }}>{11}</div>
+                                <div style={{ fontSize: 26, fontWeight: 700, marginTop: 8, marginBottom: 6, color: '#5bc0de' }}>{0}</div>
                             </div>
                         </div>
                     </div>
