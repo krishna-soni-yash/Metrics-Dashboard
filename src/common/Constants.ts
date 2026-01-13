@@ -13,7 +13,7 @@ export default class ParentListNames {
 export class SubSiteListNames {
   public static ProjectMetrics: string = "ProjectMetrics";
   public static ProjectMetricLogs: string = "ProjectMetricLogs";
-  public static RootCauseAnalysis: string = "Root Cause Analysis";
+  public static RootCauseAnalysis: string = "RootCauseAnalysis";
   public static WorkLogManagement: string = "WorkLogManagement";
   public static TaskManagement: string = "TaskManagement";
   public static ManagementEffortLog: string = "ManagementEffortLog";
@@ -22,7 +22,8 @@ export class SubSiteListNames {
   public static RAIDLog: string = "RAIDLogs";
   public static TestingDefects: string = "Testing Defects";
   public static CodeReviewDefects: string = "Code Review Defects";
-  public static AMSTicketEffortLog : string ="AMSTicketEffortLog"
+  public static AMSTicketEffortLog : string ="AMSTicketEffortLog";
+  public static FacilitationReport : string ="FacilitationReport";
 }
 
 //RCA Site Configuration
@@ -41,17 +42,17 @@ export class SiteConfiguration {
 
 export const selectedFields = [
   'Title',
-  'Test_x0020_Scenario_x0020_ID',
+ // 'Test_x0020_Scenario_x0020_ID',
   'Test_x0020_Case_x0020_ID',
   'Defect_x0020_Description',
-  'Review_x0020_method',
+  'Testing_x0020_Type',
   'Defect_x0020_detected_x0020_on',
   'Defect_x0020_Detected_x0020_by/EMail',
   'Defect_x0020_Status',
-  'Defect_x0020_Category',
-  'Defect_x0020_Classification_x002',
-  'Injected_x0020_Phase',
-  'Identified_x0020_Phase',
+  //'Defect_x0020_Type',
+  //'Defect_x0020_Classification',
+  'Defect_x0020_Origin_x0020_Phase',
+  'Defect_x0020_Detected_x0020_Phas',
   'Severity',
   'Priority',
   'Root_x0020_Cause',
@@ -92,4 +93,48 @@ export const expandFieldsCodeReview = [
   'Code_x0020_File_x0020__x002d__x0',
     'Reviewer_x0020_Name',
 ];
+export const selectedFieldsRCA = [
+  'Id',
+  'LinkTitle',
+  'ProblemStatementNumber', 
+  'CauseCategory',
+  'RCASource',
+  'RCAPriority',  
+  'RelatedMetric',
+  'Cause',
+  'RootCause',
+  'RCATechniqueUsedAndReference',
+  'RCATypeOfAction',  
+  'ActionPlanCorrection',
+  'ResponsibilityCorrection/Id',
+  'ResponsibilityCorrection/Title',
+  'ResponsibilityCorrection/EMail',
+  
+  'PlannedClosureDateCorrection', 
+  'ActualClosureDateCorrection',
+  'ActionPlanCorrective',
 
+  'ResponsibilityCorrective/Id',
+  'ResponsibilityCorrective/Title',
+  'ResponsibilityCorrective/EMail',
+
+  'PlannedClosureDateCorrective',
+  'ActualClosureDateCorrective',
+  'ActionPlanPreventive',
+
+  'ResponsibilityPreventive/Id', 
+  'ResponsibilityPreventive/Title',
+  'ResponsibilityPreventive/EMail',
+
+  'PlannedClosureDatePreventive', 
+  'ActualClosureDatePreventive',
+  'PerformanceBeforeActionPlan',    
+  'PerformanceAfterActionPlan',  
+  'Quantitative_x0020_Or_x0020_Stat',
+  'Remarks',
+];
+export const expandFieldsRCA = [
+  'ResponsibilityCorrection',
+  'ResponsibilityCorrective',
+  'ResponsibilityPreventive'
+];

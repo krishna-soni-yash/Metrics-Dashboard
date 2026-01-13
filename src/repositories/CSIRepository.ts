@@ -74,7 +74,7 @@ export class CSIRepository implements ICSIRepository {
 
             const normalized = (items || []).map((it: any) => ({
                 Title: it?.Title ?? '',
-                CSATAquiredDate: it?.CSATAquiredDate ?? '',
+                CSATAquiredDate: it?.Created ?? '',
 
             })) as unknown as ICSI[];
 

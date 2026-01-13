@@ -3,8 +3,8 @@ import IGenericService from '../services/IGenericServices';
 import { WebPartContext } from '@microsoft/sp-webpart-base';
 import ErrorMessages from '../common/ErrorMessages';
 import { SubSiteListNames } from '../common/Constants';
-import { IRAIDLogRepository } from './repositoryInterface/IRAIDLogRepository';
-import { IRAIDLogs } from '../Models/IRAIDLogs';
+import { IFacilitationReportRepository } from './repositoryInterface/IFacilitationReportInterface';
+import { IFacilitationReport } from '../Models/IFacilationReport';
 //import { getListConfigurationBasedOnMetricLogs } from '../repositories/ObjectivesMasterRepository';
 //import IObjectivesMasterRepository from './repositoriesInterface/IObjectivesMasterRepository';
 
@@ -12,9 +12,9 @@ import { IRAIDLogs } from '../Models/IRAIDLogs';
  * Repository for ProjectTypes list
  * Implements a simple cached fetch of Id/LinkTitle values
  */
-export class RAIDLogRepository implements IRAIDLogRepository {
+export class FacilitationReportRepository implements IFacilitationReportRepository {
     private service: IGenericService;
-    private cache: IRAIDLogs[] | null = null;
+    private cache: IFacilitationReport[] | null = null;
     private cacheTimestamp = 0;
     private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
@@ -36,7 +36,7 @@ export class RAIDLogRepository implements IRAIDLogRepository {
 
 
 
-    public async getRiskValues(useCache: boolean = true, context?: WebPartContext, selectedStartDate?: string, selectedEndDate?: string): Promise<IRAIDLogs[]> {
+    public async getFacilitationValues(useCache: boolean = true, context?: WebPartContext, selectedStartDate?: string, selectedEndDate?: string): Promise<IFacilitationReport[]> {
         const now = Date.now();
 
         if (useCache && this.cache && (now - this.cacheTimestamp) < this.CACHE_DURATION) {
@@ -59,42 +59,36 @@ export class RAIDLogRepository implements IRAIDLogRepository {
             // }
             const items = await this.service.fetchAllItems<any>({
                 context,
-                listTitle: SubSiteListNames.RAIDLog,
+                listTitle: SubSiteListNames.FacilitationReport,
                 //select: selectFields,
                 pageSize: 5000,
-                //orderBy: 'Created',
+                filter:"Status eq 'open'",
+               // orderBy: 'Created',
                 //   $select=Id,Title,Created,Author/Title
                 //   &$expand=Author
                 //   &$orderby=Created desc
                 //   &$top=1
-                 // filter: "SelectType eq 'Risk'"
+                //  filter: "CSATAquiredDate ge datetime'" + selectedStartDate + "' and (CSATAquiredDate le datetime'" + selectedEndDate + "')",
                 // filter: 'IsActive eq true and ProjectType in (' + (selectedProjectTypes?.map(pt => `'${pt}'`).join(',') || '') + ')',
 
             });
 
             const normalized = (items || []).map((it: any) => ({
-               
-                SelectType: it?.SelectType ?? '',
-                RAIDId: it?.RAIDId??'',
-                IdentificationDate: it?.IdentificationDate??'',
-                RiskDescription: it?.RiskDescription??'',
-                AssociatedGoal:it?.AssociatedGoal??'' ,
-                RiskSource: it?.RiskSource??'',
-                RiskCategory: it?.RiskCategory??'',
-                Impact: it?.Impact??'',
-                RiskPriority: it?.RiskPriority??'',
-                ImpactValue: it?.ImpactValue,
-                ProbabilityValue:it?.ProbabilityValue,
-                RiskExposure: it?.RiskExposure
+                ID: it?.ID,
+                Category: it?.Category,
+                Finding: it?.Finding,
+                FindingDate: it?.FindingDate,
+                ClosureDate: it?.ClosureDate,
+                Status: it?.Status
 
-            })) as unknown as IRAIDLogs[];
+            })) as unknown as IFacilitationReport[];
 
             this.cache = normalized;
             this.cacheTimestamp = now;
 
             return this.cache;
         } catch (error: any) {
-            throw new Error('Failed to fetch ProjectType: ' + (error?.message || error));
+            throw new Error('Failed to fetch FacilitationReport: ' + (error?.message || error));
         }
     }
 
@@ -115,10 +109,10 @@ export class RAIDLogRepository implements IRAIDLogRepository {
     }
 }
 
-const defaultInstance = new RAIDLogRepository();
+const defaultInstance = new FacilitationReportRepository();
 
 export default defaultInstance;
 export const MetricsRepo = defaultInstance;
-export const getRiskValues = async (useCache: boolean = false, context?: WebPartContext, selectedStartDate?: string, selectedEndDate?: string): Promise<IRAIDLogs[]> => defaultInstance.getRiskValues(useCache, context, selectedStartDate, selectedEndDate);
+export const getFacilitationValues = async (useCache: boolean = false, context?: WebPartContext, selectedStartDate?: string, selectedEndDate?: string): Promise<IFacilitationReport[]> => defaultInstance.getFacilitationValues(useCache, context, selectedStartDate, selectedEndDate);
 export const refresh = (): void => defaultInstance.refresh();
 export const getCacheStatus = (): { cached: boolean; itemCount: number; age: number } => defaultInstance.getCacheStatus();
