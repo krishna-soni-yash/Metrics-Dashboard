@@ -8,8 +8,8 @@ export interface ITestingDefects {
     DefectDetectedOn: string;
     DefectDetectedBy: string;
     DefectStatus: string;
-    DefectType: string;
-    DefectClassification: string;
+    //DefectType: string;
+   // DefectClassification: string;
     DefectOriginPhase: string;
     DefectDetectedPhase: string;
     Severity: string;
