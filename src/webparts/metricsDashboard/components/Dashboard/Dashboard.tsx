@@ -2242,7 +2242,7 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
 
 
 
-                        <PrimaryButton text="Export to XLSX" onClick={exportToCsv} />
+                        {/*<PrimaryButton text="Export to XLSX" onClick={exportToCsv} />*/}
                     </Stack>
                 </header>
 
@@ -2285,7 +2285,18 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
                 <Dialog
                     hidden={!isDialogOpen}
                     onDismiss={closeDialog}
-                    dialogContentProps={{ type: DialogType.largeHeader, title: dialogPivotKey == 'Defect density' ? 'Defect Density' : dialogPivotKey || '' }}
+                    dialogContentProps={{
+                        type: DialogType.largeHeader,
+                        title: dialogPivotKey == 'Defect density' ? 'Defect Density' : dialogPivotKey || '',
+                        closeButtonAriaLabel: 'Close dialog',
+                        topButtonsProps: [
+                            {
+                                iconProps: { iconName: 'Cancel' },
+                                ariaLabel: 'Close dialog',
+                                onClick: closeDialog,
+                            }
+                        ]
+                    }}
                     modalProps={{ isBlocking: false }}
                     minWidth={600}
                     maxWidth={900}
