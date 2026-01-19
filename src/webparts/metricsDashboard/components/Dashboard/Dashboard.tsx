@@ -1307,7 +1307,7 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
 
             });
 
-
+            //DevM Dashboard Monthly Data calculations
             const groupedByMonth: { [key: string]: MonthlyData } = {};
             WorkLogItemWithPlannedandActualEfforts.forEach(item => {
                 const actualEndDate = normalizeToLocalDateOnly(item.ActualEndDate);
