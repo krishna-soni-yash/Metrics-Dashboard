@@ -138,20 +138,22 @@ export class MetricsRepository implements IProjectMetricsRepository {
       // const selectFields: string[] = ['Id', 'LinkTitle','ProjectType','IsActive'];
       //const listConfig = await getListConfigurationBasedOnMetricLogs(context);
 
-      this.ActiveVersion = await this.getApprovedProjectlogs(true, context);
+      this.ActiveVersion = await this.getApprovedProjectlogs(false, context);
       if (this.ActiveVersion && this.ActiveVersion.length > 0) {
         this.VersionId = this.ActiveVersion[0].ID;
       }
-      if (this.VersionId != undefined) {
+        if (this.VersionId != undefined) {
+        // VersionId is stored as a lookup field in ProjectMetrics; filter on the lookup id field (VersionIdId)
+        const lookupFilterId = 'VersionIdId eq ' + (this.VersionId);
+        const projectTypeFilter = selectedProjectType ? " and ProjectType eq '" + selectedProjectType + "'" : '';
+        const filterString = lookupFilterId + projectTypeFilter;
+        console.log('getMetricsFromProjectMetrics: using filter =>', filterString);
         const items = await this.service.fetchAllItems<any>({
           context,
           listTitle: SubSiteListNames.ProjectMetrics,
           //select: selectFields,
           pageSize: 2000,
-          filter: 'VersionId eq ' + (this.VersionId) + ' and ProjectType eq \'' + selectedProjectType + '\'',
-
-          //filter: 'IsActive eq true and ProjectType in (' + (selectedProjectType?.map(pt => `'${pt}'`).join(',') || '') + ')',
-
+          filter: filterString,
         });
 
         const normalized = (items || []).map((it: any) => ({
@@ -183,9 +185,10 @@ export class MetricsRepository implements IProjectMetricsRepository {
           MetricsFormulae: it?.MetricsFormulae ?? '',
           Metrics: it?.Metrics ?? '',
         })) as unknown as IMetrics[];
-
+        this.refresh();
         this.cache = normalized;
         this.cacheTimestamp = now;
+       
 
         return this.cache;
       } else {
@@ -269,7 +272,7 @@ export class MetricsRepository implements IProjectMetricsRepository {
       throw new Error('Failed to fetch ProjectType: ' + (error?.message || error));
     }
   }
-  public async getApprovedProjectlogs(useCache: boolean = true, context?: WebPartContext): Promise<IMetrics[]> {
+  public async getApprovedProjectlogs(useCache: boolean = false, context?: WebPartContext): Promise<IMetrics[]> {
     const now = Date.now();
 
     if (useCache && this.cache && (now - this.cacheTimestamp) < this.CACHE_DURATION) {

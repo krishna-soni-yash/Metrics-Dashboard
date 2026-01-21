@@ -73,6 +73,18 @@ export interface MonthlyData {
 
 }
 
+type WorkItemSummary = {
+    WorkItemNo: any;
+    ActualEffort: number;
+    ActualEndDate: Date | '';
+    reqAnalysisEffort: number;
+    codingEffort: number;
+    codeReviewEffort: number;
+    codeReworkEffort: number;
+    unitTestingEffort: number;
+    testingExecutionEffort: number;
+};
+
 const projectTypeLookup: Record<string, string> = {
     devm: 'DevM',
     dev: 'Dev',
@@ -193,7 +205,13 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
 
     React.useEffect(() => {
         latestProjectTypeRef.current = selectedProjectType;
-        setProjectTypeSelection({ key: selectedProjectType, canonical: normalizedProjectType });
+        setProjectTypeSelection(prev => {
+            const next = { key: selectedProjectType, canonical: normalizedProjectType };
+            if (prev?.key === next.key && prev?.canonical === next.canonical) {
+                return prev;
+            }
+            return next;
+        });
     }, [normalizedProjectType, selectedProjectType]);
 
     const handleProjectTypeChange = (option?: IDropdownOption) => {
@@ -1028,15 +1046,22 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
     };
     const loadMetricsData = async () => {
         if (!context) return;
-        const projectTypeAtCall = selectedProjectType;
+        const projectTypeKeyAtCall = selectedProjectType;
+        const projectTypeFilter = normalizedProjectType ?? selectedProjectType ?? '';
         try {
             const genericServiceInstance: IGenericService = new GenericService(undefined, context);
             genericServiceInstance.init(undefined, context);
             const MetricsMeasurementRepo: IProjectMetricsRepository = new MetricsRepository(genericServiceInstance);
             MetricsMeasurementRepo.setService(genericServiceInstance);
 
-            console.log('loadMetricsData: fetching metrics for projectType=', selectedProjectType);
-            let MetricValues: any[] = await getMetricsFromProjectMetrics(false, context, '', selectedProjectType);
+            console.log('loadMetricsData: fetching metrics for projectType=', projectTypeFilter);
+            let MetricValues: any[] = projectTypeFilter
+                ? await getMetricsFromProjectMetrics(false, context, '', projectTypeFilter)
+                : await getMetricsFromProjectMetrics(false, context, '', undefined as any);
+            if ((!MetricValues || MetricValues.length === 0) && normalizedProjectType && normalizedProjectType !== selectedProjectType) {
+                console.log('loadMetricsData: no metrics for canonical value, retrying with raw key', selectedProjectType);
+                MetricValues = await getMetricsFromProjectMetrics(false, context, '', selectedProjectType);
+            }
 
             // if (!Array.isArray(MetricValues) || MetricValues.length === 0) {
             //     console.warn('loadMetricsData: no metrics returned for projectType, retrying without projectType');
@@ -1061,7 +1086,7 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
                 const key = String(item.id || item.title || '').trim();
                 return key !== '' && firstIndexOfKey(array, key) === index;
             });
-            if (latestProjectTypeRef.current !== projectTypeAtCall) {
+            if (latestProjectTypeRef.current !== projectTypeKeyAtCall) {
                 console.warn('loadMetricsData: selection changed during fetch, discarding stale metrics');
                 return;
             }
@@ -1069,20 +1094,25 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
             console.log('loadMetricsData: metrics loaded count=', unique.length);
         } catch (err) {
             console.error('loadMetricsData failed', err);
-            if (latestProjectTypeRef.current === projectTypeAtCall) {
+            if (latestProjectTypeRef.current === projectTypeKeyAtCall) {
                 setMetricsData([]);
             }
         }
     };
     const loadWorkLogManagementData = async () => {
         if (!context) return;
-        const projectTypeAtCall = selectedProjectType;
+        const projectTypeKeyAtCall = selectedProjectType;
+        const projectTypeFilter = normalizedProjectType ?? selectedProjectType ?? '';
         const genericServiceInstance: IGenericService = new GenericService(undefined, context);
         genericServiceInstance.init(undefined, context);
         const WorklogManagmentRepo: IWorklogManagmentRepository = new WorklogManagmentRepository(genericServiceInstance);
         WorklogManagmentRepo.setService(genericServiceInstance);
 
-        let WorkLogValues = await getWorkLogManagementValues(false, context, selectedProjectType);
+        let WorkLogValues = await getWorkLogManagementValues(false, context, projectTypeFilter);
+        if ((!WorkLogValues || WorkLogValues.length === 0) && normalizedProjectType && normalizedProjectType !== selectedProjectType) {
+            console.log('loadWorkLogManagementData: no worklogs for canonical value, retrying with raw key', selectedProjectType);
+            WorkLogValues = await getWorkLogManagementValues(false, context, selectedProjectType);
+        }
         const mapped = WorkLogValues.map(m => ({
             Title: m.Title,
             ReqTitle: m.ReqTitle,
@@ -1108,7 +1138,7 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
             AdjustedComplexityPoint: m.AdjustedComplexityPoint,
 
         }));
-        if (latestProjectTypeRef.current !== projectTypeAtCall) {
+        if (latestProjectTypeRef.current !== projectTypeKeyAtCall) {
             console.warn('loadWorkLogManagementData: selection changed during fetch, discarding stale worklog data');
             return;
         }
@@ -1262,181 +1292,175 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
 
 
             // Create a quick lookup: closed tasks by WorkItemNo
-            //let closedTaskByWorkItem: any[] = [];
             const closedWorkLogByWorkItem = WorkLogData.filter(wl => {
                 const status = String(wl?.Status ?? '').toLowerCase();
                 const projectType = String(wl?.ProjectType ?? '').toLowerCase();
                 const matchesStatus = status === 'completed' || status === 'closed';
                 const matchesProjectType = projectType === String(selectedProjectType ?? '').toLowerCase();
                 return matchesStatus && matchesProjectType && wl?.WorkItemNo != null;
-                //&& closedTaskByWorkItem.some(t => t.WorkItemNo === wl.WorkItemNo)
             });
-            const closedTaskByWorkItem = TaskManagementData.filter(t => ((t?.TaskStatus || '').toLowerCase() === 'completed' || (t?.TaskStatus || '').toLowerCase() === 'closed')
-                && t?.WorkItemNo != null && // && new Date(t.ActualEndDate).getMonth().toString() === selectedMonth 
-                closedWorkLogByWorkItem.some(wl => wl.WorkItemNo === t.WorkItemNo));
+            const closedWorkItemKeys = new Set<string>();
+            closedWorkLogByWorkItem.forEach(wl => {
+                const key = String(wl?.WorkItemNo ?? '').trim();
+                if (key) {
+                    closedWorkItemKeys.add(key);
+                }
+            });
+            const closedTaskByWorkItem = TaskManagementData.filter(t => {
+                const status = String(t?.TaskStatus ?? '').toLowerCase();
+                if (!(status === 'completed' || status === 'closed')) {
+                    return false;
+                }
+                const key = String(t?.WorkItemNo ?? '').trim();
+                return key !== '' && closedWorkItemKeys.has(key);
+            });
             console.log('Filtered CompletedTasks result:', closedTaskByWorkItem);
             //calcuating Planned Duration
 
 
 
-            // Precompute totals per WorkItemNo (in-scope, no helper functions)
-            const totalsByWorkItem = new Map<string, number>();
-            const totalEffortForRequirementsAnalysisByWorkItem = new Map<string, number>();
-            const totalEffortForCodingByWorkItem = new Map<string, number>();
-            const totalEffortForCodeReviewByWorkItem = new Map<string, number>();
-            const totalEffortForCodeRework = new Map<string, number>();
-            const totalEffortForUnitTesting = new Map<string, number>();
-            const totalEffortForTestingExecution = new Map<string, number>();
-            const latestEndDateByWorkItem = new Map<string, Date>();
+            const workItemSummaries = new Map<string, WorkItemSummary>();
 
-
-            // track latest end date
+            // Aggregate totals per work item in a single pass
             for (const t of closedTaskByWorkItem) {
                 const key = String(t?.WorkItemNo ?? '').trim();
-                if (key !== '') {
-                    const eff = Number(t?.ActualEffort) || 0;
-                    totalsByWorkItem.set(key, (totalsByWorkItem.get(key) ?? 0) + eff);
-                    const tt = (t?.TaskType || '').toLowerCase();
-                    totalEffortForRequirementsAnalysisByWorkItem.set(key, (totalEffortForRequirementsAnalysisByWorkItem.get(key) ?? 0) + (tt === 'requirements analysis' ? eff : 0));
-                    totalEffortForCodingByWorkItem.set(key, (totalEffortForCodingByWorkItem.get(key) ?? 0) + (tt === 'coding' ? eff : 0));
-                    totalEffortForCodeReviewByWorkItem.set(key, (totalEffortForCodeReviewByWorkItem.get(key) ?? 0) + (tt === 'code review' ? eff : 0));
-                    totalEffortForCodeRework.set(key, (totalEffortForCodeRework.get(key) ?? 0) + (tt === 'rework after code review' ? eff : 0));
-                    totalEffortForUnitTesting.set(key, (totalEffortForUnitTesting.get(key) ?? 0) + (tt === 'unit testing' ? eff : 0));
-                    totalEffortForTestingExecution.set(key, (totalEffortForTestingExecution.get(key) ?? 0) + (tt === 'system testing' || tt === 'integration testing' ? eff : 0));
+                if (!key) {
+                    continue;
+                }
+                const eff = Number(t?.ActualEffort) || 0;
+                const tt = String(t?.TaskType ?? '').toLowerCase();
+                let summary = workItemSummaries.get(key);
+                if (!summary) {
+                    summary = {
+                        WorkItemNo: t.WorkItemNo,
+                        ActualEffort: 0,
+                        ActualEndDate: '',
+                        reqAnalysisEffort: 0,
+                        codingEffort: 0,
+                        codeReviewEffort: 0,
+                        codeReworkEffort: 0,
+                        unitTestingEffort: 0,
+                        testingExecutionEffort: 0,
+                    };
+                }
+                summary.ActualEffort += eff;
+                if (tt === 'requirements analysis') summary.reqAnalysisEffort += eff;
+                if (tt === 'coding') summary.codingEffort += eff;
+                if (tt === 'code review') summary.codeReviewEffort += eff;
+                if (tt === 'rework after code review') summary.codeReworkEffort += eff;
+                if (tt === 'unit testing') summary.unitTestingEffort += eff;
+                if (tt === 'system testing' || tt === 'integration testing') summary.testingExecutionEffort += eff;
 
-                    const rawEnd = t?.ActualEndDate; // could be string or Date
-
-                    if (rawEnd != null && rawEnd !== '') {
-                        const end = rawEnd instanceof Date ? rawEnd : new Date(rawEnd);
-                        if (!isNaN(end.getTime())) {
-                            const prev = latestEndDateByWorkItem.get(key);
-                            if (!prev || end > prev) {
-                                latestEndDateByWorkItem.set(key, end);
-                            }
+                const rawEnd = t?.ActualEndDate;
+                if (rawEnd != null && rawEnd !== '') {
+                    const end = rawEnd instanceof Date ? rawEnd : new Date(rawEnd);
+                    if (!isNaN(end.getTime())) {
+                        const prev = summary.ActualEndDate instanceof Date ? summary.ActualEndDate : null;
+                        if (!prev || end > prev) {
+                            summary.ActualEndDate = end;
                         }
                     }
-
                 }
+
+                workItemSummaries.set(key, summary);
             }
-            console.log('Totals by WorkItemNo:', totalsByWorkItem);
-
-            //Calcuting the Actual Efforts of the tasks based on the work items
-            const WorkItemActualEffort: any[] = [];
-            const seen = new Set<string>();
-            closedTaskByWorkItem.forEach(task => {
-                const hasWorkItemNo =
-                    task?.WorkItemNo != null &&
-                    task?.WorkItemNo !== undefined &&
-                    String(task.WorkItemNo).trim() !== '';
-
-                if (hasWorkItemNo) {
-                    const key = String(task.WorkItemNo).trim();
-                    const totalActualEffort = totalsByWorkItem.get(key) ?? 0;
-                    const ActualEndDate = latestEndDateByWorkItem.get(key) ?? '';
-                    // skip if the work item is seen
-                    if (seen.has(key)) return;
-
-
-                    WorkItemActualEffort.push({
-                        WorkItemNo: task.WorkItemNo,
-                        ActualEffort: totalActualEffort,
-                        ActualEndDate: ActualEndDate,
-                        reqAnalysisEffort: totalEffortForRequirementsAnalysisByWorkItem.get(key) ?? 0,
-                        codingEffort: totalEffortForCodingByWorkItem.get(key) ?? 0,
-                        codeReviewEffort: totalEffortForCodeReviewByWorkItem.get(key) ?? 0,
-                        codeReworkEffort: totalEffortForCodeRework.get(key) ?? 0,
-                        unitTestingEffort: totalEffortForUnitTesting.get(key) ?? 0,
-                        testingExecutionEffort: totalEffortForTestingExecution.get(key) ?? 0,
-
-                    });
-                    // task.ActualEffort = totalActualEffort;
-
-                    seen.add(key);
-                    console.log(`Updated ActualEffort for WorkItemNo ${task.WorkItemNo}:`, totalActualEffort);
-                } else {
-                    task.ActualEffort = task.ActualEffort; // keep original
-                }
-
-            });
-
-            // get the planned effort from workLog Data
-            const WorkLogItemWithPlannedandActualEfforts: any[] = []
-            let EffortVariation = 0.0;
+            console.log('Totals by WorkItemNo:', workItemSummaries);
+            
+                const WorkItemActualEffort: any[] = [];
+                // Collect values without using Map.prototype.values to avoid requiring ES2015 lib
+                workItemSummaries.forEach((val) => {
+                    WorkItemActualEffort.push(val);
+                });
+            
+                // get the planned effort from workLog Data
+                const WorkLogItemWithPlannedandActualEfforts: any[] = []
+                let EffortVariation = 0.0;
             let meanEffortVariation = 0.0;
             let meanSV = 0.0;
             let diffDaysSV = 0;
             let PlannedDuration = 0;
             let overAllProductivity = 0.0;
 
+            const workItemEffortLookup = new Map<string, WorkItemSummary>();
+            WorkItemActualEffort.forEach(item => {
+                const key = String(item?.WorkItemNo ?? '').trim();
+                if (key) {
+                    workItemEffortLookup.set(key, item);
+                }
+            });
+
             closedWorkLogByWorkItem.forEach(worklog => {
                 if (!worklog?.WorkItemNo) {
                     return;
                 }
-                WorkItemActualEffort.filter(item => item.WorkItemNo === worklog.WorkItemNo).forEach(
-                    i => {
-                        EffortVariation = Math.round((i.ActualEffort - worklog.ActualPlannedEffort) * 100 / worklog.ActualPlannedEffort);
+                const matched = workItemEffortLookup.get(String(worklog.WorkItemNo).trim());
+                if (!matched) {
+                    return;
+                }
+                const i = matched;
+                EffortVariation = Math.round((i.ActualEffort - worklog.ActualPlannedEffort) * 100 / worklog.ActualPlannedEffort);
 
-                        const actualEndDate = normalizeToLocalDateOnly(i.ActualEndDate);
-                        const plannedEndDate = normalizeToLocalDateOnly(worklog.PlannedEndDate);
-                        const PlannedStartDate = normalizeToLocalDateOnly(worklog.PlannedStartDate);
-
-
-                        if (actualEndDate && plannedEndDate) {
-                            const diffMs = actualEndDate.getTime() - plannedEndDate.getTime();
-                            diffDaysSV = Math.round((diffMs / (1000 * 60 * 60 * 24)) * 100) / 100; // 2 decimals
-                            console.log('Days difference:', diffDaysSV);
-                        }
-
-                        if (plannedEndDate && PlannedStartDate) {
-                            const diffMs = plannedEndDate.getTime() - PlannedStartDate.getTime();
-                            PlannedDuration = (Math.round((diffMs / (1000 * 60 * 60 * 24)) * 100) / 100) + 1; // 2 decimals
-                            console.log('Days difference:', diffDaysSV);
-                        }
+                const actualEndDate = normalizeToLocalDateOnly(i.ActualEndDate);
+                const plannedEndDate = normalizeToLocalDateOnly(worklog.PlannedEndDate);
+                const PlannedStartDate = normalizeToLocalDateOnly(worklog.PlannedStartDate);
 
 
+                if (actualEndDate && plannedEndDate) {
+                    const diffMs = actualEndDate.getTime() - plannedEndDate.getTime();
+                    diffDaysSV = Math.round((diffMs / (1000 * 60 * 60 * 24)) * 100) / 100; // 2 decimals
+                    console.log('Days difference:', diffDaysSV);
+                }
 
-                        //const PlannedDuration = (new Date(worklog.PlannedEndDate).getTime() - new Date(worklog.PlannedStartDate).getTime()) + 1
-                        const ScheduledVariation = diffDaysSV * 100 / PlannedDuration
-                        overAllProductivity = i.ActualEffort / worklog.AdjustedComplexityPoint
+                if (plannedEndDate && PlannedStartDate) {
+                    const diffMs = plannedEndDate.getTime() - PlannedStartDate.getTime();
+                    PlannedDuration = (Math.round((diffMs / (1000 * 60 * 60 * 24)) * 100) / 100) + 1; // 2 decimals
+                    console.log('Days difference:', diffDaysSV);
+                }
 
-                        let ReqAnalyisEffortDensity = i.reqAnalysisEffort / worklog.AdjustedComplexityPoint;
-                        let codingProductivity = i.codingEffort / worklog.AdjustedComplexityPoint;
-                        let CodeReviewEffortDensity = i.codeReviewEffort / worklog.AdjustedComplexityPoint;
-                        let UnitTestingEffortDensity = i.unitTestingEffort / worklog.AdjustedComplexityPoint;
-                        let TestingExecutionEffortDensity = i.testingExecutionEffort / worklog.AdjustedComplexityPoint;
-                        let CodeReworkEffortDensity = i.codeReworkEffort / worklog.AdjustedComplexityPoint;
 
-                        // closedTaskByWorkItem.forEach(task => {
-                        // if (i.TaskType.toLowerCase() === 'requirements analysis' && worklog.AdjustedComplexityPoint > 0) {
-                        //     ReqAnalyisEffortDensity += (i.ActualEffort / worklog.AdjustedComplexityPoint);
-                        // }
-                        // if ( i.TaskType.toLowerCase() === 'coding' && worklog.AdjustedComplexityPoint > 0) {
-                        //     codingProductivity += (i.ActualEffort / worklog.AdjustedComplexityPoint);
-                        // }
-                        // if(i.TaskType.toLowerCase()==='code review' && worklog.AdjustedComplexityPoint > 0){
-                        //     CodeReviewEffortDensity += (i.ActualEffort / worklog.AdjustedComplexityPoint);
-                        // }
-                        // });
 
-                        WorkLogItemWithPlannedandActualEfforts.push({
-                            ...i, PlannedEffort: worklog.ActualPlannedEffort,
-                            EffortVariation: EffortVariation,
-                            PlannedEndDate: worklog.PlannedEndDate.toLocaleString(),
-                            PlannedStartDate: worklog.PlannedStartDate.toLocaleString(),
-                            PlannedDuration: PlannedDuration,
-                            ScheduledVariation: ScheduledVariation,
-                            size: worklog.AdjustedComplexityPoint,
-                            OverAllProductivity: overAllProductivity,
-                            ReqAnalyisEffortDensity: ReqAnalyisEffortDensity,
-                            codingProductivity: codingProductivity,
-                            CodeReviewEffortDensity: CodeReviewEffortDensity,
-                            CodeReworkEffortDensity: CodeReworkEffortDensity,
-                            UnitTestingEffortDensity: UnitTestingEffortDensity,
-                            TestingExecutionEffortDensity: TestingExecutionEffortDensity,
-                        });
-                        console.log(`Updated PlannedEffort for WorkItemNo `, WorkLogItemWithPlannedandActualEfforts);
-                    }
-                );
+                //const PlannedDuration = (new Date(worklog.PlannedEndDate).getTime() - new Date(worklog.PlannedStartDate).getTime()) + 1
+                const ScheduledVariation = diffDaysSV * 100 / PlannedDuration
+                overAllProductivity = i.ActualEffort / worklog.AdjustedComplexityPoint
+
+                let ReqAnalyisEffortDensity = i.reqAnalysisEffort / worklog.AdjustedComplexityPoint;
+                let codingProductivity = i.codingEffort / worklog.AdjustedComplexityPoint;
+                let CodeReviewEffortDensity = i.codeReviewEffort / worklog.AdjustedComplexityPoint;
+                let UnitTestingEffortDensity = i.unitTestingEffort / worklog.AdjustedComplexityPoint;
+                let TestingExecutionEffortDensity = i.testingExecutionEffort / worklog.AdjustedComplexityPoint;
+                let CodeReworkEffortDensity = i.codeReworkEffort / worklog.AdjustedComplexityPoint;
+
+                // closedTaskByWorkItem.forEach(task => {
+                // if (i.TaskType.toLowerCase() === 'requirements analysis' && worklog.AdjustedComplexityPoint > 0) {
+                //     ReqAnalyisEffortDensity += (i.ActualEffort / worklog.AdjustedComplexityPoint);
+                // }
+                // if ( i.TaskType.toLowerCase() === 'coding' && worklog.AdjustedComplexityPoint > 0) {
+                //     codingProductivity += (i.ActualEffort / worklog.AdjustedComplexityPoint);
+                // }
+                // if(i.TaskType.toLowerCase()==='code review' && worklog.AdjustedComplexityPoint > 0){
+                //     CodeReviewEffortDensity += (i.ActualEffort / worklog.AdjustedComplexityPoint);
+                // }
+                // });
+
+                WorkLogItemWithPlannedandActualEfforts.push({
+                    ...i, PlannedEffort: worklog.ActualPlannedEffort,
+                    EffortVariation: EffortVariation,
+                    PlannedEndDate: worklog.PlannedEndDate.toLocaleString(),
+                    PlannedStartDate: worklog.PlannedStartDate.toLocaleString(),
+                    PlannedDuration: PlannedDuration,
+                    ScheduledVariation: ScheduledVariation,
+                    size: worklog.AdjustedComplexityPoint,
+                    OverAllProductivity: overAllProductivity,
+                    ReqAnalyisEffortDensity: ReqAnalyisEffortDensity,
+                    codingProductivity: codingProductivity,
+                    CodeReviewEffortDensity: CodeReviewEffortDensity,
+                    CodeReworkEffortDensity: CodeReworkEffortDensity,
+                    UnitTestingEffortDensity: UnitTestingEffortDensity,
+                    TestingExecutionEffortDensity: TestingExecutionEffortDensity,
+                    actualMonthKey: actualEndDate ? actualEndDate.getMonth().toString() : undefined,
+                    actualYear: actualEndDate ? actualEndDate.getFullYear() : undefined,
+                });
+                console.log(`Updated PlannedEffort for WorkItemNo `, WorkLogItemWithPlannedandActualEfforts);
 
             });
 
@@ -1469,6 +1493,20 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
                 }
             });
 
+            const itemsForSelectedMonth = selectedMonth == null
+                ? []
+                : WorkLogItemWithPlannedandActualEfforts.filter(item => {
+                    if (item?.actualMonthKey !== undefined) {
+                        return item.actualMonthKey === selectedMonth;
+                    }
+                    try {
+                        const d = item && item.ActualEndDate ? new Date(item.ActualEndDate) : null;
+                        return d && d.getMonth().toString() === selectedMonth;
+                    } catch {
+                        return false;
+                    }
+                });
+
             const workItemsForDefectDensity = new Set<string>();
             const workItemLookup = new Map<string, string>();
             const complexityByWorkItem = new Map<string, number>();
@@ -1486,6 +1524,7 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
                 }
             });
             const codeReviewDefectsByMonth = new Map<string, number>();
+            const codeReviewDefectsByWorkItemMonth = new Map<string, number>();
             (CodeReviewDefectsData || []).forEach(defect => {
                 const requirementIdRaw = String(defect?.RequirementID ?? '').trim();
                 if (!requirementIdRaw) {
@@ -1502,7 +1541,11 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
                     return;
                 }
                 const key = `${defectDate.getFullYear()}-${defectDate.getMonth() + 1}`;
+                const monthIndexKey = defectDate.getMonth().toString();
                 codeReviewDefectsByMonth.set(key, (codeReviewDefectsByMonth.get(key) ?? 0) + 1);
+                const workItemKey = resolvedRequirementKey.trim();
+                const combinedKey = `${monthIndexKey}|${workItemKey}`;
+                codeReviewDefectsByWorkItemMonth.set(combinedKey, (codeReviewDefectsByWorkItemMonth.get(combinedKey) ?? 0) + 1);
             });
             Object.keys(groupedByMonth).forEach(monthKey => {
                 groupedByMonth[monthKey].codeReviewDefects = codeReviewDefectsByMonth.get(monthKey) ?? 0;
@@ -1516,14 +1559,7 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
 
 
             // Calculating Mean and Standard Deviation for Effort Variation, Scheduled Variation and Overall Productivity
-            const filteredForMonth = WorkLogItemWithPlannedandActualEfforts.filter(i => {
-                try {
-                    const d = i && i.ActualEndDate ? new Date(i.ActualEndDate) : null;
-                    return d && d.getMonth().toString() === selectedMonth;
-                } catch (e) {
-                    return false;
-                }
-            });
+            const filteredForMonth = itemsForSelectedMonth;
             const n = filteredForMonth.length;
             if (n > 0) {
                 meanEffortVariation = filteredForMonth.reduce((sum, x) => sum + (Number(x.EffortVariation) || 0), 0) / n;
@@ -1545,8 +1581,8 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
                 setStandardDeviationOfEV(0);
                 setStandardDeviationOfSV(0);
             }
-            const OAPSize = WorkLogItemWithPlannedandActualEfforts.filter(i => new Date(i.ActualEndDate).getMonth().toString() == selectedMonth).reduce((sum, x) => sum + x.size, 0);
-            const OAPEffort = WorkLogItemWithPlannedandActualEfforts.filter(i => new Date(i.ActualEndDate).getMonth().toString() == selectedMonth).reduce((sum, x) => sum + x.ActualEffort, 0);
+            const OAPSize = itemsForSelectedMonth.reduce((sum, x) => sum + (Number(x.size) || 0), 0);
+            const OAPEffort = itemsForSelectedMonth.reduce((sum, x) => sum + (Number(x.ActualEffort) || 0), 0);
             setOverAllProductivitySize(OAPSize);
             setActualEffortOverAllProductivity(OAPEffort);
             const numofdefects = defectsData.filter(dD => dD.DefectDetectedPhase == 'Post Production' && new Date(dD.DefectDetectedOn).getMonth().toString() == selectedMonth).length
@@ -1556,17 +1592,19 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
 
             //Calculating the number of Code Review Defects for the selected month and for completed task in worklog managemnet;
             let totalCodeReviewDefectsForSelectedMonth = 0;
-            WorkLogItemWithPlannedandActualEfforts.filter(wl => new Date(wl.ActualEndDate).getMonth().toString() == selectedMonth).forEach(wlItem => {
-                const codeReviewDefectsForWorkItem = CodeReviewDefectsData.filter(crD => crD.RequirementID == wlItem.WorkItemNo && new Date(crD.IdentifiedDate).getMonth().toString() == selectedMonth).length
-                totalCodeReviewDefectsForSelectedMonth += codeReviewDefectsForWorkItem;
-            });
-            setCodeReviewDefectCount(totalCodeReviewDefectsForSelectedMonth);
-
-
-            WorkLogItemWithPlannedandActualEfforts.filter(wl => new Date(wl.ActualEndDate).getMonth().toString() == selectedMonth).forEach(wlItem => {
-                const codeReviewDefectsForWorkItem = CodeReviewDefectsData.filter(crD => crD.RequirementID == wlItem.WorkItemNo && new Date(crD.IdentifiedDate).getMonth().toString() == selectedMonth).length
-                totalCodeReviewDefectsForSelectedMonth += codeReviewDefectsForWorkItem;
-            });
+            if (selectedMonth != null) {
+                const workItemsInSelectedMonth = new Set<string>();
+                itemsForSelectedMonth.forEach(item => {
+                    const key = String(item?.WorkItemNo ?? '').trim();
+                    if (key) {
+                        workItemsInSelectedMonth.add(key);
+                    }
+                });
+                workItemsInSelectedMonth.forEach(workItemKey => {
+                    const combinedKey = `${selectedMonth}|${workItemKey}`;
+                    totalCodeReviewDefectsForSelectedMonth += codeReviewDefectsByWorkItemMonth.get(combinedKey) ?? 0;
+                });
+            }
             setCodeReviewDefectCount(totalCodeReviewDefectsForSelectedMonth);
 
 
@@ -2728,7 +2766,9 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
 
 
                 <section style={{ margin: '20px 0' }}>
-                    <div style={kpiAreaStyle}>
+                    {
+                        (selectedProjectType.toLowerCase() === 'dev' || selectedProjectType.toLowerCase() === 'devm') && (
+                        <div style={kpiAreaStyle}>
                         {kpis.map(k => {
                             const pivotKey = k.pivotKey || k.title;
                             const isActive = selectedPivotKey === pivotKey;
@@ -2761,6 +2801,11 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
                             );
                         })}
                     </div>
+                        
+                        )
+
+                    }
+                    
                 </section>
                 <Dialog
                     hidden={!isDialogOpen}
@@ -2935,221 +2980,7 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
                     </DialogFooter>
                 </Dialog>
 
-                {/* <Pivot
-                    aria-label="Metrics Tabs"
-                    selectedKey={selectedPivotKey}
-                    onLinkClick={(item) => setSelectedPivotKey(item?.props.itemKey ?? 'Customer')}
-                    styles={{ root: { width: '100%' } }}
-                >
-                    <PivotItem itemKey="Customer" headerText="Customer Satisfaction Index">
-                        {/* Two charts side-by-side: rating with limits + risk 
-                        <div style={chartsContainerStyle}>
-                            <div style={chartBoxStyle}>
-                                <ClickableChart chartKey="rating"
-                                    title="Customer Rating"
-                                    chartType="ComboChart"
-                                    data={CSITrendData}
-                                    options={options}
-                                    width="100%" height="240px" />
-                            </div>
-                            {/* <div style={chartBoxStyle}>
-                                    <ClickableChart chartKey="risk" title="Risks Open" chartType="AreaChart" data={riskData} options={{ colors: ['#f39c12'] }} width="100%" height="240px" />
-                                </div> 
-                        </div>
-                    </PivotItem>
-
-                    <PivotItem itemKey="EffortDistribution" headerText="Effort Distribution">
-                        {/* Two charts side-by-side: rating with limits + risk 
-                        <div style={chartsContainerStyle}>
-                            <div style={chartBoxStyle}>
-                                <ClickableChart chartKey="EffortDistribution"
-                                    title="Effort Distribution" chartType="PieChart"
-                                    data={EffortDistributionData ?? []}
-                                    options={{
-
-                                        legend: { position: 'right' },
-
-                                        pieSliceText: 'value', // alternatives: 'percentage' | 'label' | 'none'
-                                        pieSliceTextStyle: { fontSize: 12, color: '#fff' },
-
-                                        // Optional: format tooltip to show values
-                                        tooltip: { trigger: 'focus', text: 'value' },
-
-                                        slices: {
-                                            0: { color: '#e91e63' },
-                                            1: { color: '#ff7043' },
-                                            2: { color: '#ffc107' },
-                                            3: { color: '#8bc34a' }
-                                        }
-                                    }}
-                                    width="100%"
-                                    height="220px" />
-
-                            </div>
-                            {/* <div style={chartBoxStyle}>
-                                    <ClickableChart chartKey="risk" title="Risks Open" chartType="AreaChart" data={riskData} options={{ colors: ['#f39c12'] }} width="100%" height="240px" />
-                                </div> *
-                        </div>
-                    </PivotItem>
-
-                    <PivotItem itemKey="Effort Variation" headerText="Effort Variation">
-                        {/* Two charts side-by-side: rating with limits + risk 
-                        <div style={chartsContainerStyle}>
-                            <div style={chartBoxStyle}>
-                                <ClickableChart chartKey="Effort Variation"
-                                    title="Effort Variation"
-                                    chartType="ComboChart"
-                                    data={efforVatiationChartData ?? []}
-                                    options={options}
-                                    width="100%" height="240px" />
-                            </div>
-                            {/* <div style={chartBoxStyle}>
-                                    <ClickableChart chartKey="risk" title="Risks Open" chartType="AreaChart" data={riskData} options={{ colors: ['#f39c12'] }} width="100%" height="240px" />
-                                </div> 
-                        </div>
-                    </PivotItem>
-
-                    <PivotItem itemKey="Schedule Variation" headerText="Schedule Variation">
-                        {/* Two charts side-by-side: rating with limits + risk 
-                        <div style={chartsContainerStyle}>
-                            <div style={chartBoxStyle}>
-                                <ClickableChart chartKey="Schedule Variation"
-                                    title="Schedule Variation"
-                                    chartType="ComboChart"
-                                    data={scheduledVatiationChartData ?? []}
-                                    options={options}
-                                    width="100%" height="240px" />
-                            </div>
-                            {/* <div style={chartBoxStyle}>
-                                    <ClickableChart chartKey="risk" title="Risks Open" chartType="AreaChart" data={riskData} options={{ colors: ['#f39c12'] }} width="100%" height="240px" />
-                                </div> 
-                        </div>
-                    </PivotItem>
-
-                    <PivotItem itemKey="Overall Productivity" headerText="Overall Productivity">
-                        {/* Two charts side-by-side: rating with limits + risk 
-                        <div style={chartsContainerStyle}>
-                            <div style={chartBoxStyle}>
-                                <ClickableChart chartKey="Overall Productivity"
-                                    title="Overall Productivity"
-                                    chartType="ComboChart"
-                                    data={OverallProductivityChartData ?? []}
-                                    options={options}
-                                    width="100%" height="240px" />
-                            </div>
-                            {/* <div style={chartBoxStyle}>
-                                    <ClickableChart chartKey="risk" title="Risks Open" chartType="AreaChart" data={riskData} options={{ colors: ['#f39c12'] }} width="100%" height="240px" />
-                                </div> 
-                        </div>
-                    </PivotItem>
-
-                    {/* <PivotItem headerText="Velocity" itemKey='Velocity'>
-                            {/* Two charts side-by-side: velocity with productivity limits + defect with limits 
-                            <div style={chartsContainerStyle}>
-                                <div style={chartBoxStyle}>
-                                    <ClickableChart
-                                        chartKey="velocity"
-                                        title="Velocity"
-                                        chartType="ComboChart"
-                                        data={velocityData}
-                                        options={{
-                                            legend: { position: 'none' },
-                                            seriesType: 'line',
-                                            series: {
-                                                1: { color: '#28a745', lineWidth: 1, lineDashStyle: [4, 4] },
-                                                2: { color: '#dc3545', lineWidth: 1, lineDashStyle: [4, 4] },
-                                            },
-                                            colors: ['#007bff'],
-                                        }}
-                                        width="100%"
-                                        height="240px"
-                                    />
-                                </div>
-                                <div style={chartBoxStyle}>
-                                    <ClickableChart
-                                        chartKey="defect"
-                                        title="Defect Density"
-                                        chartType="ComboChart"
-                                        data={defectData}
-                                        options={{
-                                            seriesType: 'bars',
-                                            series: {
-                                                1: { type: 'line', color: '#28a745', lineWidth: 1, lineDashStyle: [4, 4] },
-                                                2: { type: 'line', color: '#dc3545', lineWidth: 1, lineDashStyle: [4, 4] },
-                                            },
-                                            colors: ['#dc3545'],
-                                            legend: { position: 'none' },
-                                        }}
-                                        width="100%"
-                                        height="240px"
-                                    />
-                                </div>
-                            </div>
-                        </PivotItem>
-
-                        <PivotItem itemKey="Defect" headerText="Defect Density">
-                            {/* Two charts side-by-side 
-                            <div style={chartsContainerStyle}>
-                                <div style={chartBoxStyle}>
-                                    <ClickableChart chartKey="defect_table" title="Defect Density (bar)" chartType="ColumnChart" data={defectData} options={{ colors: ['#dc3545'] }} width="100%" height="240px" />
-                                </div>
-                                <div style={chartBoxStyle}>
-                                    <ClickableChart
-                                        chartKey="week"
-                                        title="Weekly Report"
-                                        chartType="LineChart"
-                                        data={weekData}
-                                        options={{ colors: ['#28a745'] }}
-                                        width="100%"
-                                        height="240px"
-                                    />
-                                </div>
-                            </div>
-                        </PivotItem>
-                        
-
-                        <PivotItem itemKey="Resource" headerText="Resource Utilization">
-                            {/* Two charts side-by-side 
-                            <div style={chartsContainerStyle}>
-                                <div style={chartBoxStyle}>
-                                    <ClickableChart chartKey="rating_2" title="Resource Utilization" chartType="LineChart" data={resourceData} options={{ colors: ['#28a745'] }} width="100%" height="240px" />
-                                </div>
-                                <div style={chartBoxStyle}>
-                                    <ClickableChart chartKey="risk_2" title="Risks Open" chartType="AreaChart" data={riskData} options={{ colors: ['#f39c12'] }} width="100%" height="240px" />
-                                </div>
-                            </div>
-                        </PivotItem>
-
-                        <PivotItem itemKey="Weekly" headerText="Weekly Report">
-                            {/* Two charts side-by-side (weekly with limits + complementary) 
-                            <div style={chartsContainerStyle}>
-                                <div style={chartBoxStyle}>
-                                    <ClickableChart chartKey="week_2" title="Weekly Report" chartType="ComboChart" data={weekData} options={{ legend: { position: 'none' }, seriesType: 'line', series: { 1: { color: '#28a745', lineWidth: 1, lineDashStyle: [4, 4] }, 2: { color: '#dc3545', lineWidth: 1, lineDashStyle: [4, 4] } }, colors: ['#6f42c1'] }} width="100%" height="300px" />
-                                </div>
-                                <div style={chartBoxStyle}>
-                                    <ClickableChart chartKey="velocity_2" title="Velocity (bar)" chartType="ColumnChart" data={velocityData} options={{ colors: ['#007bff'] }} width="100%" height="300px" />
-                                </div>
-                            </div>
-                        </PivotItem>
-
-                        <PivotItem itemKey="Risk" headerText="Risk">
-                            {/* Two charts side-by-side 
-                            <div style={chartsContainerStyle}>
-                                <div style={chartBoxStyle}>
-                                    <ClickableChart chartKey="risk_3" title="Risks Open (line)" chartType="LineChart" data={riskData} options={{ colors: ['#e91e63'] }} width="100%" height="300px" />
-                                </div>
-                                <div style={chartBoxStyle}>
-                                    <ClickableChart chartKey="defect_2" title="Defect Area" chartType="AreaChart" data={defectData} options={{ colors: ['#f39c12'] }} width="100%" height="300px" />
-                                    <div style={{ marginTop: 12 }}>
-                                        <DefaultButton text="Open Risk Report" />
-                                    </div>
-                                </div>
-                            </div>
-                        </PivotItem> 
-                </Pivot> */}
-
-
-
+    
                 {/* Critical Risk and Findings Summary side-by-side */}
                 <section style={belowNavContainerStyle}>
                     <div style={halfChartBoxStyle}>
@@ -3165,61 +2996,13 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
                                 textStyle: { fontSize: 12, color: '#333' }
                             }
                         }} width="100%" height="260px" />
-                        {/* 
-                        <div style={{ marginTop: 10 }}>
-                            <Text variant="small">Total critical findings open: <strong>158</strong></Text>
-                            <div style={{ marginTop: 8 }}>
-                              
-                                <ClickableChart chartKey="criticalBreakdown" title="Critical Breakdown" chartType="PieChart" data={criticalBreakdownData} options={{ legend: { position: 'right' }, colors: ['#9c27b0', '#03a9f4'] }} width="100%" height="140px" />
-                            </div>
-                        </div> */}
                     </div>
 
                     <div style={halfChartBoxStyle}>
                         <Text variant="large" styles={{ root: { marginBottom: 8 } }}>Findings Summary</Text>
                         <div>
-                            {/* <Chart
-                                chartType="PieChart"
-                                width="100%"
-                                height="180px"
-                                data={findingsTypeData}
-                                options={{
-                                    pieHole: 0.5,
-                                    legend: { position: 'right' },
-                                    slices: { 0: { color: '#d32f2f' }, 1: { color: '#1976d2' }, 2: { color: '#388e3c' } },
-                                }}
-                            /> */}
                             <ClickableChart chartKey="findings" title="Findings by Type" chartType="PieChart" data={facilitationReportDataForChart} options={{ pieHole: 0, legend: { position: 'right' }, pieSliceTextStyle: { fontSize: 12, color: '#fff' }, slices: { 0: { color: '#d32f2f' }, 1: { color: '#1976d2' }, 2: { color: '#388e3c' } } }} width="100%" height="180px" />
                         </div>
-
-                        {/* <div style={{ marginTop: 10 }}>
-                            <Text variant="small">Top contributors (departments & projects)</Text>
-                            <div style={{ marginTop: 8 }}>
-                                {/* <Chart
-                                    chartType="ColumnChart"
-                                    width="100%"
-                                    height="180px"
-                                    data={contributorsData}
-                                    options={{
-                                        legend: { position: 'none' },
-                                        colors: ['#5c6bc0'],
-                                        hAxis: { textStyle: { fontSize: 10 } },
-                                        vAxis: { minValue: 0 },
-                                    }}
-                                /> 
-                                <ClickableChart chartKey="contributors" title="Top Contributors" chartType="ColumnChart" data={contributorsData} options={{ legend: { position: 'none' }, colors: ['#5c6bc0'], hAxis: { textStyle: { fontSize: 10 } }, vAxis: { minValue: 0 } }} width="100%" height="180px" />
-                            </div>
-                        </div> */}
-
-                        {/* <div style={{ marginTop: 8 }}>
-                            <Text variant="small">Details:</Text>
-                            <ul style={{ marginTop: 6 }}>
-                                <li>Total open findings: <strong>736</strong></li>
-                                <li>NCs: <strong>101</strong>, Observations: <strong>356</strong>, Facilitation: <strong>279</strong></li>
-                                <li>Top departments: <strong>IT IS (43)</strong>, <strong>IT IS Europe (35)</strong>, <strong>FPA (27)</strong></li>
-                                <li>Top projects: <strong>Dormer (39)</strong>, <strong>Americhem AI platform (23)</strong>, <strong>RLUS Analytics (23)</strong></li>
-                            </ul>
-                        </div> */}
                     </div>
                 </section>
 
@@ -3228,9 +3011,7 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
                     <div style={halfChartBoxStyle}>
                         <Text variant="large" styles={{ root: { marginBottom: 8 } }}>Aging Findings</Text>
                         <ClickableChart chartKey="aging" title="Aging Findings" chartType="ColumnChart" data={agingFindingsData} options={{ legend: { position: 'none' }, colors: ['#42a5f5'], hAxis: { title: 'Age bucket' }, vAxis: { title: 'Number of findings', minValue: 0, format: '0', gridlines: { color: '#eee' } }, bar: { groupWidth: '60%' } }} width="100%" height="260px" />
-                        {/* <div style={{ marginTop: 10 }}>
-                            <Text variant="small">Summary: <strong>736</strong> open findings across aging buckets.</Text>
-                        </div> */}
+                       
                     </div>
                     <div style={halfChartBoxStyle}>
                         <Text variant="large" styles={{ root: { marginBottom: 8 } }}>PCI</Text>
@@ -3243,9 +3024,7 @@ export default function Dashboard({ context }: DashboardProps): JSX.Element {
                             width="100%"
                             height="260px"
                         />
-                        {/* <div style={{ marginTop: 10 }}>
-                            <Text variant="small">Summary: <strong>736</strong> open findings across aging buckets.</Text>
-                        </div> */}
+                       
                     </div>
                 </section>
                 <section style={{ margin: '20px 0' }}>
